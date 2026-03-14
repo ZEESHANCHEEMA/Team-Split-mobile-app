@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -17,14 +17,15 @@ import { auth } from '../services/firebaseConfig';
 import {
   getTeam,
   addExpense,
-  CURRENCY,
   getUserProfile,
   addGuestMemberToTeam,
   getExpense,
   updateExpense,
   deleteExpense,
 } from '../services/firestore';
-import { colors } from '../theme/colors';
+import { useCurrency } from '../theme/useCurrency';
+import { useTheme } from '../theme/useTheme';
+import type { Colors } from '../theme/colors';
 
 interface MemberOption {
   id: string;
@@ -35,6 +36,9 @@ type Props = NativeStackScreenProps<RootStackParamList, 'AddExpense'>;
 
 const AddExpenseScreen: React.FC<Props> = ({ navigation, route }) => {
   const { teamId, expenseId } = route.params;
+  const { colors, radius } = useTheme();
+  const styles = useMemo(() => makeStyles(colors, radius), [colors, radius]);
+  const CURRENCY = useCurrency();
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
@@ -197,18 +201,16 @@ const AddExpenseScreen: React.FC<Props> = ({ navigation, route }) => {
           onPress={() => navigation.goBack()}
           disabled={loading}
         >
-          <Ionicons name="chevron-back" size={22} color={colors.text} />
+          <Ionicons name="chevron-back" size={20} color={colors.mutedText} />
         </TouchableOpacity>
-        <Text style={styles.title}>{isEditing ? 'Edit expense' : 'Add expense'}</Text>
+        <Text style={styles.title}>{isEditing ? 'Edit expense' : 'Split a Bill'}</Text>
       </View>
-      {teamName ? (
-        <Text style={styles.subtitle}>Team: {teamName}</Text>
-      ) : null}
 
+      <Text style={styles.label}>Description</Text>
       <TextInput
         style={styles.input}
-        placeholder="What was it for?"
-        placeholderTextColor="#6b7280"
+        placeholder="e.g. Dinner at Joe's"
+        placeholderTextColor={colors.mutedText}
         value={title}
         onChangeText={(t) => {
           setTitle(t);
@@ -217,6 +219,22 @@ const AddExpenseScreen: React.FC<Props> = ({ navigation, route }) => {
         editable={!loading}
       />
 
+     
+      <Text style={styles.label}>Amount ({CURRENCY})</Text>
+      <TextInput
+        style={[styles.input, styles.amountInput]}
+        placeholder="0.00"
+        placeholderTextColor={colors.mutedText}
+        value={amount}
+        onChangeText={(t) => {
+          setAmount(t.replace(/[^0-9.]/g, ''));
+          setError(null);
+        }}
+        keyboardType="decimal-pad"
+        editable={!loading}
+      />
+
+      {error ? <Text style={styles.error}>{error}</Text> : null}
       <View style={styles.addMemberRow}>
         <TextInput
           style={[styles.input, styles.addMemberInput]}
@@ -255,24 +273,9 @@ const AddExpenseScreen: React.FC<Props> = ({ navigation, route }) => {
           )}
         </TouchableOpacity>
       </View>
-      <TextInput
-        style={styles.input}
-        placeholder={`Amount (${CURRENCY})`}
-        placeholderTextColor="#6b7280"
-        value={amount}
-        onChangeText={(t) => {
-          setAmount(t.replace(/[^0-9.]/g, ''));
-          setError(null);
-        }}
-        keyboardType="decimal-pad"
-        editable={!loading}
-      />
-
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-
       {members.length > 0 && (
         <View style={styles.paidByContainer}>
-          <Text style={styles.splitLabel}>Paid by</Text>
+          <Text style={styles.label}>Who paid?</Text>
           <View style={styles.paidByRow}>
             {orderedMembers.map((m) => {
               const isSelected = paidById === m.id;
@@ -311,16 +314,31 @@ const AddExpenseScreen: React.FC<Props> = ({ navigation, route }) => {
 
       {members.length > 0 && (
         <View style={styles.splitContainer}>
-          <Text style={styles.splitLabel}>Split between</Text>
-          <View style={styles.splitChipsRow}>
+          <View style={styles.splitAmongRow}>
+            <Text style={styles.label}>Split among</Text>
+            <TouchableOpacity
+              onPress={() => {
+                setError(null);
+                setSelectedMemberIds(orderedMembers.map((m) => m.id));
+              }}
+              disabled={loading}
+            >
+              <Text style={styles.selectAllText}>Select all</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.splitMemberList}>
             {orderedMembers.map((m) => {
               const isSelected = selectedMemberIds.includes(m.id);
+              const perPerson =
+                selectedMemberIds.length > 0 && amount
+                  ? parseFloat(amount.replace(/,/g, '.')) / selectedMemberIds.length
+                  : 0;
               return (
                 <TouchableOpacity
                   key={m.id}
                   style={[
-                    styles.splitChip,
-                    isSelected && styles.splitChipSelected,
+                    styles.splitMemberRow,
+                    isSelected && styles.splitMemberRowSelected,
                   ]}
                   disabled={loading}
                   onPress={() => {
@@ -328,28 +346,29 @@ const AddExpenseScreen: React.FC<Props> = ({ navigation, route }) => {
                     setSelectedMemberIds((prev) => {
                       const exists = prev.includes(m.id);
                       if (exists) {
-                        if (prev.length === 1) {
-                          return prev; // keep at least one person
-                        }
+                        if (prev.length === 1) return prev;
                         return prev.filter((id) => id !== m.id);
                       }
                       return [...prev, m.id];
                     });
                   }}
                 >
-                  <Ionicons
-                    name={isSelected ? 'checkmark-circle' : 'ellipse-outline'}
-                    size={18}
-                    color={isSelected ? colors.primaryTextOnPrimary : colors.mutedText}
-                  />
-                  <Text
+                  <View
                     style={[
-                      styles.splitChipText,
-                      isSelected && styles.splitChipTextSelected,
+                      styles.splitCheckbox,
+                      isSelected && styles.splitCheckboxSelected,
                     ]}
                   >
-                    {m.name}
-                  </Text>
+                    {isSelected && (
+                      <Ionicons name="checkmark" size={14} color={colors.primaryTextOnPrimary} />
+                    )}
+                  </View>
+                  <Text style={styles.splitMemberName}>{m.name}</Text>
+                  {isSelected && perPerson > 0 && (
+                    <Text style={styles.splitPerPerson}>
+                      {CURRENCY} {perPerson.toFixed(2)}
+                    </Text>
+                  )}
                 </TouchableOpacity>
               );
             })}
@@ -363,11 +382,17 @@ const AddExpenseScreen: React.FC<Props> = ({ navigation, route }) => {
         disabled={loading}
       >
         {loading ? (
-          <ActivityIndicator color="#020617" />
+          <ActivityIndicator color={colors.primaryTextOnPrimary} />
         ) : (
           <>
-            <Ionicons name={isEditing ? 'save-outline' : 'add-circle'} size={20} color="#020617" />
-            <Text style={styles.buttonText}>{isEditing ? 'Save changes' : 'Add expense'}</Text>
+            <Ionicons
+              name={isEditing ? 'save-outline' : 'checkmark'}
+              size={20}
+              color={colors.primaryTextOnPrimary}
+            />
+            <Text style={styles.buttonText}>
+              {isEditing ? 'Save changes' : 'Split Bill'}
+            </Text>
           </>
         )}
       </TouchableOpacity>
@@ -397,7 +422,8 @@ const AddExpenseScreen: React.FC<Props> = ({ navigation, route }) => {
   );
 };
 
-const styles = StyleSheet.create({
+function makeStyles(colors: Colors, radius: { lg: number }) {
+  return StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
@@ -419,65 +445,34 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: 0,
   },
-  subtitle: {
-    fontSize: 14,
-    color: colors.mutedText,
-    marginBottom: 20,
-  },
-  input: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    color: colors.text,
-    fontSize: 16,
-    marginBottom: 16,
-  },
-  error: {
-    color: colors.danger,
-    marginBottom: 12,
-  },
-  splitContainer: {
-    marginBottom: 12,
-  },
-  splitLabel: {
+  label: {
     fontSize: 14,
     fontWeight: '500',
     color: colors.mutedText,
     marginBottom: 8,
   },
-  splitChipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  splitChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
+  input: {
+    backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    height: 48,
+    color: colors.text,
+    fontSize: 16,
+    marginBottom: 20,
   },
-  splitChipSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+  amountInput: {
+    fontSize: 22,
+    fontWeight: '700',
   },
-  splitChipText: {
-    marginLeft: 6,
-    fontSize: 13,
-    color: colors.mutedText,
-  },
-  splitChipTextSelected: {
-    color: colors.primaryTextOnPrimary,
-    fontWeight: '600',
+  error: {
+    color: colors.danger,
+    marginBottom: 12,
   },
   paidByContainer: {
-    marginBottom: 12,
+    marginBottom: 20,
   },
   paidByRow: {
     flexDirection: 'row',
@@ -487,25 +482,77 @@ const styles = StyleSheet.create({
   paidByChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: radius.lg,
+    backgroundColor: colors.secondary,
   },
   paidByChipSelected: {
     backgroundColor: colors.primary,
-    borderColor: colors.primary,
   },
   paidByChipText: {
     marginLeft: 6,
-    fontSize: 13,
-    color: colors.mutedText,
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.secondaryText,
   },
   paidByChipTextSelected: {
     color: colors.primaryTextOnPrimary,
-    fontWeight: '600',
+  },
+  splitContainer: {
+    marginBottom: 20,
+  },
+  splitAmongRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  selectAllText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.primary,
+  },
+  splitMemberList: {
+    gap: 8,
+  },
+  splitMemberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: radius.lg,
+    borderWidth: 2,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  splitMemberRowSelected: {
+    borderColor: colors.primary,
+    backgroundColor: 'rgba(232, 92, 58, 0.06)',
+  },
+  splitCheckbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  splitCheckboxSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  splitMemberName: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '500',
+    color: colors.text,
+  },
+  splitPerPerson: {
+    fontSize: 14,
+    color: colors.mutedText,
   },
   addMemberRow: {
     flexDirection: 'row',
@@ -545,8 +592,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     backgroundColor: colors.primary,
-    borderRadius: 999,
-    paddingVertical: 14,
+    borderRadius: radius.lg,
+    height: 48,
   },
   buttonDisabled: {
     opacity: 0.7,
@@ -567,6 +614,7 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontWeight: '500',
   },
-});
+  });
+}
 
 export default AddExpenseScreen;

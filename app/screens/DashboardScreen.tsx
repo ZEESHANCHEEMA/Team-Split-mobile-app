@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,11 +12,14 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { auth } from '../services/firebaseConfig';
-import { getDashboardTeams, getMemberBalancesForUser, CURRENCY } from '../services/firestore';
+import { getDashboardTeams, getMemberBalancesForUser } from '../services/firestore';
+import { useCurrency } from '../theme/useCurrency';
+import { useTheme } from '../theme/useTheme';
 import type { RootStackParamList, MainTabParamList } from '../navigation/AppNavigator';
-import type { TeamSummary, MemberBalanceSummary } from '../types/firestore';
 import type { CompositeNavigationProp } from '@react-navigation/native';
-import { colors } from '../theme/colors';
+import type { Colors } from '../theme/colors';
+import { useAppSelector, useAppDispatch } from '../store/hooks';
+import { setDashboardData } from '../store/slices/cacheSlice';
 
 type DashboardNavigation = CompositeNavigationProp<
   NativeStackNavigationProp<MainTabParamList, 'Dashboard'>,
@@ -25,16 +28,18 @@ type DashboardNavigation = CompositeNavigationProp<
 
 const DashboardScreen: React.FC = () => {
   const navigation = useNavigation<DashboardNavigation>();
-  const [teams, setTeams] = useState<TeamSummary[]>([]);
-  const [memberBalances, setMemberBalances] = useState<MemberBalanceSummary[]>([]);
+  const dispatch = useAppDispatch();
+  const { colors, radius } = useTheme();
+  const styles = useMemo(() => makeStyles(colors, radius), [colors, radius]);
+  const { teams, memberBalances } = useAppSelector(state => state.cache);
+  const CURRENCY = useCurrency();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     const uid = auth.currentUser?.uid;
     if (!uid) {
-      setTeams([]);
-      setMemberBalances([]);
+      dispatch(setDashboardData({ teams: [], memberBalances: [] }));
       setLoading(false);
       return;
     }
@@ -43,16 +48,14 @@ const DashboardScreen: React.FC = () => {
         getDashboardTeams(uid),
         getMemberBalancesForUser(uid),
       ]);
-      setTeams(teamsData);
-      setMemberBalances(memberData);
+      dispatch(setDashboardData({ teams: teamsData, memberBalances: memberData }));
     } catch {
-      setTeams([]);
-      setMemberBalances([]);
+      dispatch(setDashboardData({ teams: [], memberBalances: [] }));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [dispatch]);
 
   useFocusEffect(
     useCallback(() => {
@@ -68,14 +71,15 @@ const DashboardScreen: React.FC = () => {
 
   const totalYouOwe = teams.reduce((sum, t) => sum + t.youOwe, 0);
   const totalOwedToYou = teams.reduce((sum, t) => sum + t.owedToYou, 0);
+  const totalPending = totalYouOwe + totalOwedToYou;
+  const totalSettled = 0; // optional: sum of settled amounts if we track it
   const netBalance = totalOwedToYou - totalYouOwe;
-  const isSettled = teams.length > 0 && netBalance === 0;
 
   const handleTeamPress = (teamId: string) => {
     navigation.navigate('TeamDetail', { teamId });
   };
 
-  const handleNewTeam = () => {
+  const handleSeeAllTeams = () => {
     navigation.navigate('CreateTeam');
   };
 
@@ -95,180 +99,130 @@ const DashboardScreen: React.FC = () => {
     );
   }
 
-  const userName = auth.currentUser?.displayName || auth.currentUser?.email || 'there';
-  const firstName = userName.split(' ')[0];
+  const displayTeams = teams.slice(0, 3);
 
   return (
     <View style={styles.container}>
-      <Text style={styles.greeting}>Welcome back, {firstName} 👋</Text>
+      <Text style={styles.greeting}>Welcome back 👋</Text>
+      <Text style={styles.appTitle}>TeamSplit</Text>
 
-      <View style={styles.summaryCard}>
-        <View style={styles.summaryHeaderRow}>
-          <View>
-            <Text style={styles.summaryLabel}>Overall balance</Text>
-            <Text
-              style={[
-                styles.summaryAmount,
-                netBalance > 0 && styles.summaryPositive,
-                netBalance < 0 && styles.summaryNegative,
-              ]}
-            >
-              {`${CURRENCY} ${Math.abs(netBalance).toFixed(2)}`}
-            </Text>
-            <Text style={styles.summaryHint}>
-              {teams.length === 0
-                ? 'Create a team to start tracking shared expenses.'
-                : isSettled
-                ? 'Nice! Everyone is settled up for now.'
-                : netBalance > 0
-                ? 'You should receive this amount from your friends.'
-                : 'You currently owe this amount across your teams.'}
-            </Text>
-          </View>
-          <View
-            style={[
-              styles.statusPill,
-              isSettled && styles.statusPillSettled,
-              !isSettled && netBalance > 0 && styles.statusPillPositive,
-              !isSettled && netBalance < 0 && styles.statusPillNegative,
-            ]}
-          >
-            <Ionicons
-              name={
-                isSettled
-                  ? 'checkmark-circle'
-                  : netBalance > 0
-                  ? 'trending-up'
-                  : 'trending-down'
-              }
-              size={18}
-              color={colors.primaryTextOnPrimary}
-            />
-            <Text style={styles.statusPillText}>
-              {isSettled ? 'All settled' : netBalance > 0 ? 'You are owed' : 'You owe'}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.summaryRow}>
-          <View style={styles.summaryPill}>
-            <View style={styles.summaryPillTopRow}>
-              <Ionicons name="arrow-redo-outline" size={16} color={colors.danger} />
-              <Text style={styles.summaryPillLabel}>You owe</Text>
-            </View>
-            <Text style={styles.summaryPillAmount}>
-              {CURRENCY} {totalYouOwe.toFixed(2)}
-            </Text>
-          </View>
-          <View style={styles.summaryPill}>
-            <View style={styles.summaryPillTopRow}>
-              <Ionicons name="arrow-undo-outline" size={16} color="#16a34a" />
-              <Text style={styles.summaryPillLabel}>You are owed</Text>
-            </View>
-            <Text style={styles.summaryPillAmount}>
-              {CURRENCY} {totalOwedToYou.toFixed(2)}
-            </Text>
-          </View>
+      {/* Primary stat card – reference: bg-primary rounded-2xl p-5 */}
+      <View style={styles.primaryCard}>
+        <Text style={styles.primaryCardLabel}>Total Pending</Text>
+        <Text style={styles.primaryCardAmount}>
+          {CURRENCY} {totalPending.toFixed(2)}
+        </Text>
+        <View style={styles.primaryCardRow}>
+          <Text style={styles.primaryCardMeta}>
+            {teams.length} {teams.length === 1 ? 'team' : 'teams'}
+          </Text>
+          <Text style={styles.primaryCardMeta}>
+            {CURRENCY} {totalSettled.toFixed(2)} settled
+          </Text>
         </View>
       </View>
 
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Your teams</Text>
-        <TouchableOpacity style={styles.sectionAction} onPress={handleNewTeam}>
-          <Ionicons name="add-circle-outline" size={18} color="#38bdf8" />
-          <Text style={styles.sectionActionText}>New team</Text>
-        </TouchableOpacity>
+      {/* Two small cards – reference: You're owed / You owe */}
+      <View style={styles.twoColRow}>
+        <View style={styles.smallCard}>
+          <View style={[styles.smallCardIcon, styles.smallCardIconSuccess]}>
+            <Ionicons name="arrow-down-outline" size={16} color={colors.success} />
+          </View>
+          <Text style={styles.smallCardLabel}>You're owed</Text>
+          <Text style={[styles.smallCardAmount, styles.smallCardAmountSuccess]}>
+            {CURRENCY} {totalOwedToYou.toFixed(2)}
+          </Text>
+        </View>
+        <View style={styles.smallCard}>
+          <View style={[styles.smallCardIcon, styles.smallCardIconWarning]}>
+            <Ionicons name="arrow-up-outline" size={16} color={colors.warning} />
+          </View>
+          <Text style={styles.smallCardLabel}>You owe</Text>
+          <Text style={[styles.smallCardAmount, styles.smallCardAmountWarning]}>
+            {CURRENCY} {totalYouOwe.toFixed(2)}
+          </Text>
+        </View>
       </View>
 
+    
+{/* 
       <FlatList
-        data={teams}
+        data={displayTeams}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#38bdf8" />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
         }
         ListEmptyComponent={
           <View style={styles.empty}>
             <Text style={styles.emptyText}>No teams yet</Text>
             <Text style={styles.emptySubtext}>Create a team to start splitting expenses</Text>
-            <TouchableOpacity style={styles.emptyButton} onPress={handleNewTeam}>
+            <TouchableOpacity style={styles.emptyButton} onPress={handleSeeAllTeams}>
               <Text style={styles.emptyButtonText}>Create team</Text>
             </TouchableOpacity>
           </View>
         }
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
-        ListFooterComponent={
-          memberBalances.length > 0 ? (
-            <View style={styles.peopleList}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>People summary</Text>
-              </View>
-              {memberBalances.map((m) => (
-                <View key={m.id} style={styles.personRow}>
-                  <View>
-                    <Text style={styles.personName}>{m.name}</Text>
-                    <Text style={styles.personSubtitle}>
-                      {m.net > 0
-                        ? 'They owe you'
-                        : m.net < 0
-                        ? 'You owe them'
-                        : 'Settled up'}
-                    </Text>
-                  </View>
-                  <Text
-                    style={[
-                      styles.personAmount,
-                      m.net > 0 && styles.summaryPositive,
-                      m.net < 0 && styles.summaryNegative,
-                    ]}
-                  >
-                    {CURRENCY} {Math.abs(m.net).toFixed(2)}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          ) : null
-        }
+        ItemSeparatorComponent={() => <View style={styles.teamSpacer} />}
+        scrollEnabled={false}
         renderItem={({ item }) => {
-          const teamNet = item.owedToYou - item.youOwe;
-          const isSettled = teamNet === 0;
-
+          const pending = item.youOwe > 0 ? item.youOwe : item.owedToYou;
           return (
             <TouchableOpacity
               style={styles.teamRow}
               onPress={() => handleTeamPress(item.id)}
               activeOpacity={0.7}
             >
-              <View style={styles.teamLeft}>
-                <View style={styles.teamAvatar}>
-                  <Text style={styles.teamAvatarText}>{item.name.charAt(0).toUpperCase()}</Text>
-                </View>
-                <View>
-                  <Text style={styles.teamName}>{item.name}</Text>
-                  <Text style={styles.teamSubtitle}>
-                    {isSettled
-                      ? 'You are all settled up'
-                      : teamNet > 0
-                      ? `You should receive ${CURRENCY} ${Math.abs(teamNet).toFixed(2)}`
-                      : `You owe ${CURRENCY} ${Math.abs(teamNet).toFixed(2)}`}
-                  </Text>
-                </View>
+              <View style={styles.teamEmoji}>
+                <Text style={styles.teamEmojiText}>{item.name.charAt(0).toUpperCase()}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color="#64748b" />
+              <View style={styles.teamMiddle}>
+                <Text style={styles.teamName} numberOfLines={1}>{item.name}</Text>
+                <Text style={styles.teamSubtitle}>
+                  {item.youOwe + item.owedToYou > 0 ? 'Pending' : 'Settled'} · balance
+                </Text>
+              </View>
+              {pending > 0 && (
+                <Text style={styles.teamPending}>
+                  {CURRENCY} {Math.round(pending)}
+                </Text>
+              )}
             </TouchableOpacity>
           );
         }}
-      />
+      /> */}
 
-      <TouchableOpacity style={styles.fab} onPress={handleAddExpense} activeOpacity={0.9}>
-        <Ionicons name="add" size={22} color={colors.primaryTextOnPrimary} />
-        <Text style={styles.fabText}>Add expense</Text>
-      </TouchableOpacity>
+      {memberBalances.length > 0 && (
+        <View style={styles.peopleSection}>
+          <Text style={styles.peopleSectionTitle}>People summary</Text>
+          {memberBalances.map((m) => (
+            <View key={m.id} style={styles.personCard}>
+              <View style={styles.personCardLeft}>
+                <Text style={styles.personName}>{m.name}</Text>
+                <Text style={styles.personSubtitle}>
+                  {m.net > 0 ? 'They owe you' : m.net < 0 ? 'You owe them' : 'Settled up'}
+                </Text>
+              </View>
+              <Text
+                style={[
+                  styles.personAmount,
+                  m.net > 0 && styles.summaryPositive,
+                  m.net < 0 && styles.summaryNegative,
+                ]}
+              >
+                {CURRENCY} {Math.abs(m.net).toFixed(2)}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/*   */}
     </View>
   );
 };
 
-const styles = StyleSheet.create({
+function makeStyles(colors: Colors, radius: { xl: number; lg: number }) {
+  return StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
@@ -280,113 +234,182 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   greeting: {
-    fontSize: 18,
+    fontSize: 14,
     color: colors.mutedText,
-    marginBottom: 12,
-  },
-  summaryCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-    padding: 14,
-    borderWidth: 0,
-    marginBottom: 24,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 6,
-  },
-  summaryHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingBottom: 14,
-  },
-  summaryLabel: {
-    fontSize: 16,
-    color: colors.mutedText,
-    marginBottom: 2,
-  },
-  summaryAmount: {
-    fontSize: 30,
-    fontWeight: '700',
-    color: colors.text,
     marginBottom: 4,
   },
-  summaryPositive: {
-    color: '#4ade80',
+  appTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 24,
   },
-  summaryNegative: {
-    color: '#f97373',
+  primaryCard: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.xl,
+    padding: 20,
+    marginBottom: 24,
   },
-  summaryHint: {
+  primaryCardLabel: {
+    fontSize: 14,
+    color: colors.primaryTextOnPrimary,
+    opacity: 0.9,
+  },
+  primaryCardAmount: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: colors.primaryTextOnPrimary,
+    marginTop: 4,
+  },
+  primaryCardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginTop: 16,
+  },
+  primaryCardMeta: {
+    fontSize: 14,
+    color: colors.primaryTextOnPrimary,
+    opacity: 0.9,
+  },
+  twoColRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 24,
+  },
+  smallCard: {
+    flex: 1,
+    backgroundColor: colors.card,
+    borderRadius: radius.xl,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  smallCardIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  smallCardIconSuccess: {
+    backgroundColor: 'rgba(30, 155, 107, 0.15)',
+  },
+  smallCardIconWarning: {
+    backgroundColor: 'rgba(229, 163, 25, 0.15)',
+  },
+  smallCardLabel: {
+    fontSize: 12,
+    color: colors.mutedText,
+  },
+  smallCardAmount: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+    marginTop: 2,
+  },
+  smallCardAmountSuccess: {
+    color: colors.success,
+  },
+  smallCardAmountWarning: {
+    color: colors.warning,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  seeAllText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.primary,
+  },
+  listContent: {
+    flex:1,
+    paddingBottom: 24,
+  },
+  teamSpacer: {
+    height: 8,
+  },
+  teamRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  teamEmoji: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(232, 92, 58, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  teamEmojiText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  teamMiddle: {
+    flex: 1,
+    minWidth: 0,
+  },
+  teamName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  teamSubtitle: {
     fontSize: 12,
     color: colors.mutedText,
     marginTop: 2,
-    maxWidth: 220,
   },
-  statusPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: colors.primary,
-  },
-  statusPillSettled: {
-    backgroundColor: colors.success,
-  },
-  statusPillPositive: {
-    backgroundColor: colors.primary,
-  },
-  statusPillNegative: {
-    backgroundColor: colors.danger,
-  },
-  statusPillText: {
-    marginLeft: 6,
-    fontSize: 12,
+  teamPending: {
+    fontSize: 14,
     fontWeight: '600',
-    color: colors.primaryTextOnPrimary,
+    color: colors.primary,
   },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
+  summaryPositive: {
+    color: colors.success,
   },
-  summaryPill: {
-    flex: 1,
-    flexDirection: 'column',
-    backgroundColor: '#EEF2FF',
-    borderRadius: 999,
-    borderWidth: 0,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+  summaryNegative: {
+    color: colors.warning,
   },
-  summaryPillTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    gap: 6,
-    marginBottom: 4,
+  peopleSection: {
+    marginTop: 4,
+    marginBottom: 126,
   },
-  summaryPillLabel: {
-    fontSize: 12,
-    color: '#4B5563',
-  },
-  summaryPillAmount: {
-    fontSize: 16,
+  peopleSectionTitle: {
+    fontSize: 18,
     fontWeight: '600',
     color: colors.text,
+    marginBottom: 12,
   },
-  peopleList: {
-    marginTop: 8,
-    paddingBottom: 24,
-  },
-  personRow: {
+  personCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 10,
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: 8,
+  },
+  personCardLeft: {
+    flex: 1,
+    minWidth: 0,
   },
   personName: {
     fontSize: 15,
@@ -402,29 +425,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: colors.text,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  sectionAction: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  sectionActionText: {
-    fontSize: 13,
-    color: colors.primary,
-  },
-  listContent: {
-    paddingBottom: 96,
   },
   empty: {
     paddingVertical: 48,
@@ -443,65 +443,25 @@ const styles = StyleSheet.create({
   },
   emptyButton: {
     backgroundColor: colors.primary,
+    borderRadius: radius.lg,
     paddingHorizontal: 20,
     paddingVertical: 10,
-    borderRadius: 999,
   },
   emptyButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#020617',
-  },
-  separator: {
-    height: 1,
-    backgroundColor: colors.border,
-    marginLeft: 52,
-  },
-  teamRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-  },
-  teamLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
-  teamAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#e0ecff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  teamAvatarText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1d4ed8',
-  },
-  teamName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  teamSubtitle: {
-    fontSize: 12,
-    color: colors.mutedText,
-    marginTop: 2,
+    color: colors.primaryTextOnPrimary,
   },
   fab: {
     position: 'absolute',
     right: 20,
-    bottom: 32,
+    bottom: 100,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    borderRadius: 999,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+    borderRadius: radius.xl,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
     backgroundColor: colors.primary,
     shadowColor: '#000',
     shadowOpacity: 0.25,
@@ -514,6 +474,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.primaryTextOnPrimary,
   },
-});
+  });
+}
 
 export default DashboardScreen;

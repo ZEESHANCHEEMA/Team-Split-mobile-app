@@ -1,30 +1,53 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Image } from 'react-native';
+import React, { useEffect, useState, useMemo } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  TextInput,
+  ActivityIndicator,
+  Image,
+  ScrollView,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
-import { colors } from '../theme/colors';
-import { auth, storage } from '../services/firebaseConfig';
+import { CountryPicker } from 'react-native-country-codes-picker';
+import { useTheme } from '../theme/useTheme';
+import type { Colors } from '../theme/colors';
+import { auth } from '../services/firebaseConfig';
 import { getUserProfile, updateUserProfile } from '../services/firestore';
 import type { UserProfile } from '../types/firestore';
-import { updateProfile, updateEmail, signOut } from 'firebase/auth';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { updateProfile, updateEmail } from 'firebase/auth';
+import type { CompositeNavigationProp } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
-import type { RootStackParamList } from '../navigation/AppNavigator';
+import type { RootStackParamList, MainTabParamList } from '../navigation/AppNavigator';
+import { useAppDispatch } from '../store/hooks';
+import { updateProfileDisplay } from '../store/slices/authSlice';
+import { setCurrency } from '../store/slices/settingsSlice';
+import { useCurrencyCode } from '../theme/useCurrency';
 
-type ProfileNav = NativeStackNavigationProp<RootStackParamList>;
+type ProfileNav = CompositeNavigationProp<
+  BottomTabNavigationProp<MainTabParamList, 'Profile'>,
+  NativeStackNavigationProp<RootStackParamList>
+>;
 
 const ProfileScreen: React.FC = () => {
   const navigation = useNavigation<ProfileNav>();
+  const dispatch = useAppDispatch();
+  const { colors, radius } = useTheme();
+  const currencyCode = useCurrencyCode();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [country, setCountry] = useState('');
   const [photoUrl, setPhotoUrl] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showCountryPicker, setShowCountryPicker] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -51,7 +74,9 @@ const ProfileScreen: React.FC = () => {
         setDisplayName(name);
         setEmail(mail);
         setPhone(phoneVal);
+        setCountry((data?.country as string) || '');
         setPhotoUrl(photoVal || undefined);
+        if (data?.currency) dispatch(setCurrency(data.currency));
       } catch {
         setError('Unable to load profile.');
       } finally {
@@ -85,7 +110,7 @@ const ProfileScreen: React.FC = () => {
     }
 
     try {
-      await updateUserProfile(user.uid, trimmedName, trimmedEmail, trimmedPhone, photoUrl);
+      await updateUserProfile(user.uid, trimmedName, trimmedEmail, trimmedPhone, photoUrl, country.trim() || undefined, currencyCode);
     } catch (e) {
       // Firestore might not be fully configured yet; log and continue
       // so the UI still reflects the updated Auth profile.
@@ -93,70 +118,23 @@ const ProfileScreen: React.FC = () => {
       console.warn('[Profile] Failed to update Firestore profile', e);
     }
 
+    const savedCountry = country.trim() || undefined;
     setProfile((prev) =>
       prev
-        ? { ...prev, displayName: trimmedName, email: trimmedEmail, phone: trimmedPhone, photoUrl }
+        ? { ...prev, displayName: trimmedName, email: trimmedEmail, phone: trimmedPhone, photoUrl, country: savedCountry, currency: currencyCode }
         : {
             displayName: trimmedName,
             email: trimmedEmail,
             phone: trimmedPhone,
             photoUrl,
+            country: savedCountry,
+            currency: currencyCode,
             createdAt: { seconds: 0, nanoseconds: 0 },
           }
     );
+    dispatch(updateProfileDisplay({ displayName: trimmedName, email: trimmedEmail, photoURL: photoUrl }));
     setEditing(false);
     setSaving(false);
-  };
-
-  const handlePickImage = async () => {
-    const user = auth.currentUser;
-    if (!user) return;
-
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      setError('We need photo permissions to update your avatar.');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-    if (result.canceled || !result.assets || result.assets.length === 0) {
-      return;
-    }
-
-    const asset = result.assets[0];
-    if (!asset.uri) return;
-
-    try {
-      setSaving(true);
-      setError(null);
-
-      const response = await fetch(asset.uri);
-      const blob = await response.blob();
-
-      const avatarRef = ref(storage, `avatars/${user.uid}.jpg`);
-      await uploadBytes(avatarRef, blob);
-      const url = await getDownloadURL(avatarRef);
-
-      setPhotoUrl(url);
-      await updateProfile(user, { photoURL: url });
-      await updateUserProfile(
-        user.uid,
-        displayName.trim() || user.displayName || '',
-        email.trim() || user.email || '',
-        phone.trim(),
-        url
-      );
-    } catch {
-      setError('Could not update photo. Please try again.');
-    } finally {
-      setSaving(false);
-    }
   };
 
   const initials =
@@ -166,6 +144,8 @@ const ProfileScreen: React.FC = () => {
       .join('')
       .slice(0, 2)
       .toUpperCase() || '?';
+
+  const styles = useMemo(() => makeStyles(colors, radius), [colors, radius]);
 
   if (loading) {
     return (
@@ -183,10 +163,40 @@ const ProfileScreen: React.FC = () => {
     );
   }
 
+  const handleEditPress = () => {
+    setError(null);
+    setEditing(true);
+  };
+
+  const handleCancelEdit = () => {
+    setEditing(false);
+    setDisplayName(profile?.displayName ?? '');
+    setEmail(profile?.email ?? '');
+    setPhone(profile?.phone ?? '');
+    setCountry(profile?.country ?? '');
+    setError(null);
+  };
+
   return (
-    <View style={styles.container}>
-      <View style={styles.card}>
-        <View style={styles.avatarRow}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      {/* Header: back + Profile title */}
+      <View style={styles.headerRow}>
+        <TouchableOpacity
+          onPress={() => {
+            if (editing) handleCancelEdit();
+            else navigation.navigate('Settings');
+          }}
+          style={styles.backButton}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={styles.screenTitle}>{editing ? 'Edit Profile' : 'Profile'}</Text>
+      </View>
+
+      {/* Avatar section: centered, large circle */}
+      <View style={styles.avatarSection}>
+        <View style={styles.avatarWrapper}>
           <View style={styles.avatar}>
             {photoUrl ? (
               <Image source={{ uri: photoUrl }} style={styles.avatarImage} />
@@ -194,64 +204,74 @@ const ProfileScreen: React.FC = () => {
               <Text style={styles.avatarText}>{initials}</Text>
             )}
           </View>
-          <View style={styles.avatarInfo}>
-            <Text style={styles.name}>{displayName || 'Your name'}</Text>
-            <Text style={styles.email}>{email || 'you@example.com'}</Text>
-          </View>
-          <TouchableOpacity
-            style={styles.avatarEditButton}
-            onPress={handlePickImage}
-            disabled={saving}
-          >
-            <Ionicons name="camera-outline" size={18} color={colors.primary} />
-          </TouchableOpacity>
         </View>
+        <Text style={styles.avatarName}>{displayName || 'Your name'}</Text>
+        <Text style={styles.avatarEmail}>{email || 'you@example.com'}</Text>
+      </View>
 
-        <View style={styles.form}>
-          <Text style={styles.label}>Full name</Text>
-          <View style={styles.inputRow}>
-            <Ionicons name="person-outline" size={20} color={colors.mutedText} style={styles.inputIcon} />
-            <TextInput
-              style={styles.inputInner}
-              value={displayName}
-              onChangeText={setDisplayName}
-              placeholder="Your full name"
-              placeholderTextColor={colors.mutedText}
-              editable={!saving}
-            />
-          </View>
+      {/* Form: label + field rows */}
+      <View style={styles.formSection}>
+        <Text style={styles.label}>Full Name</Text>
+        <TextInput
+          style={styles.input}
+          value={displayName}
+          onChangeText={setDisplayName}
+          placeholder="Full name"
+          placeholderTextColor={colors.mutedText}
+          editable={editing && !saving}
+        />
 
-          <Text style={styles.label}>Email</Text>
-          <View style={styles.inputRow}>
-            <Ionicons name="mail-outline" size={20} color={colors.mutedText} style={styles.inputIcon} />
-            <TextInput
-              style={styles.inputInner}
-              value={email}
-              onChangeText={setEmail}
-              placeholder="Your email"
-              placeholderTextColor={colors.mutedText}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              editable={!saving}
-            />
-          </View>
+        <Text style={styles.label}>Email</Text>
+        <TextInput
+          style={styles.input}
+          value={email}
+          onChangeText={setEmail}
+          placeholder="Email"
+          placeholderTextColor={colors.mutedText}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          editable={editing && !saving}
+        />
 
-          <Text style={styles.label}>Contact number</Text>
-          <View style={styles.inputRow}>
-            <Ionicons name="call-outline" size={20} color={colors.mutedText} style={styles.inputIcon} />
-            <TextInput
-              style={styles.inputInner}
-              value={phone}
-              onChangeText={setPhone}
-              placeholder="Add phone number"
-              placeholderTextColor={colors.mutedText}
-              keyboardType="phone-pad"
-              editable={!saving}
-            />
-          </View>
+        <Text style={styles.label}>Phone Number</Text>
+        <TextInput
+          style={styles.input}
+          value={phone}
+          onChangeText={setPhone}
+          placeholder="+1 234 567 8900"
+          placeholderTextColor={colors.mutedText}
+          keyboardType="phone-pad"
+          editable={editing && !saving}
+        />
 
-          {error && <Text style={styles.errorText}>{error}</Text>}
+        <Text style={styles.label}>Country</Text>
+        <TouchableOpacity
+          style={styles.countryInputRow}
+          onPress={() => editing && setShowCountryPicker(true)}
+          disabled={!editing}
+        >
+          <Text style={[styles.inputValue, !country && { color: colors.mutedText }]}>
+            {country || 'Select country'}
+          </Text>
+          <Ionicons name="chevron-down" size={20} color={colors.mutedText} />
+        </TouchableOpacity>
+      </View>
 
+      <CountryPicker
+        show={showCountryPicker}
+        lang="en"
+        pickerButtonOnPress={(item) => {
+          const name = item.name?.en ?? item.name?.['en'] ?? Object.values(item.name ?? {})[0] ?? '';
+          setCountry(name);
+          setShowCountryPicker(false);
+        }}
+        onBackdropPress={() => setShowCountryPicker(false)}
+      />
+
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+      {editing ? (
+        <>
           <TouchableOpacity
             style={[styles.primaryButton, saving && styles.disabledButton]}
             onPress={handleSave}
@@ -263,161 +283,177 @@ const ProfileScreen: React.FC = () => {
               <Text style={styles.primaryButtonText}>Save changes</Text>
             )}
           </TouchableOpacity>
-        </View>
-      </View>
+          <TouchableOpacity style={styles.secondaryButton} onPress={handleCancelEdit} disabled={saving}>
+            <Text style={styles.secondaryButtonText}>Cancel</Text>
+          </TouchableOpacity>
+        </>
+      ) : (
+        <TouchableOpacity style={styles.editProfileButton} onPress={handleEditPress} activeOpacity={0.8}>
+          <Text style={styles.editProfileButtonText}>Edit Profile</Text>
+        </TouchableOpacity>
+      )}
 
-      <TouchableOpacity
-        style={styles.logoutButton}
-        onPress={async () => {
-          await signOut(auth);
-          navigation.reset({ index: 0, routes: [{ name: 'Welcome' }] });
-        }}
-      >
-        <Ionicons name="log-out-outline" size={18} color={colors.danger} />
-        <Text style={styles.logoutText}>Logout</Text>
-      </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-    paddingHorizontal: 24,
-    paddingTop: 56,
-  },
-  centered: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
-  },
-  avatarRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 16,
-  },
-  avatarImage: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-  },
-  avatarText: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: colors.primary,
-  },
-  avatarInfo: {
-    flex: 1,
-  },
-  name: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  email: {
-    fontSize: 14,
-    color: colors.mutedText,
-    marginTop: 2,
-  },
-  avatarEditButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
-  form: {
-    marginTop: 4,
-  },
-  label: {
-    fontSize: 13,
-    color: colors.mutedText,
-    marginBottom: 4,
-    marginTop: 8,
-  },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    marginBottom: 4,
-    paddingVertical: 4,
-  },
-  inputIcon: {
-    marginLeft: 14,
-  },
-  inputInner: {
-    flex: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: colors.text,
-    fontSize: 16,
-  },
-  primaryButton: {
-    backgroundColor: colors.primary,
-    borderRadius: 999,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  disabledButton: {
-    opacity: 0.7,
-  },
-  primaryButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.primaryTextOnPrimary,
-  },
-  secondaryButton: {
-    borderRadius: 999,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  secondaryButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  errorText: {
-    fontSize: 14,
-    color: colors.danger,
-    marginTop: 8,
-  },
-  logoutButton: {
-    marginTop: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  logoutText: {
-    fontSize: 14,
-    color: colors.danger,
-    fontWeight: '500',
-  },
-});
+function makeStyles(colors: Colors, radius: { xl: number; lg: number }) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    content: {
+      paddingHorizontal: 24,
+      paddingTop: 56,
+      paddingBottom: 100,
+    },
+    headerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 24,
+      gap: 12,
+    },
+    backButton: {
+      padding: 4,
+    },
+    screenTitle: {
+      fontSize: 22,
+      fontWeight: '700',
+      color: colors.text,
+    },
+    centered: {
+      justifyContent: 'center',
+      alignItems: 'center',
+      flex: 1,
+    },
+    avatarSection: {
+      alignItems: 'center',
+      marginBottom: 32,
+    },
+    avatarWrapper: {
+      position: 'relative',
+      marginBottom: 12,
+    },
+    avatar: {
+      width: 96,
+      height: 96,
+      borderRadius: 48,
+      backgroundColor: colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    avatarImage: {
+      width: 96,
+      height: 96,
+      borderRadius: 48,
+    },
+    avatarText: {
+      fontSize: 36,
+      fontWeight: '700',
+      color: colors.primaryTextOnPrimary,
+    },
+    avatarName: {
+      fontSize: 20,
+      fontWeight: '600',
+      color: colors.text,
+      marginBottom: 4,
+    },
+    avatarEmail: {
+      fontSize: 14,
+      color: colors.mutedText,
+    },
+    formSection: {
+      marginBottom: 24,
+    },
+    label: {
+      fontSize: 14,
+      fontWeight: '500',
+      color: colors.text,
+      marginBottom: 8,
+      marginTop: 4,
+    },
+    input: {
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.lg,
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      height: 48,
+      color: colors.text,
+      fontSize: 16,
+      marginBottom: 4,
+    },
+    inputValue: {
+      fontSize: 16,
+      color: colors.text,
+      flex: 1,
+    },
+    countryInputRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.lg,
+      paddingHorizontal: 16,
+      height: 48,
+      marginBottom: 4,
+    },
+    editProfileButton: {
+      backgroundColor: colors.card,
+      borderRadius: radius.lg,
+      height: 48,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    editProfileButtonText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: colors.text,
+    },
+    primaryButton: {
+      backgroundColor: colors.primary,
+      borderRadius: radius.lg,
+      height: 48,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 8,
+    },
+    disabledButton: {
+      opacity: 0.7,
+    },
+    primaryButtonText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: colors.primaryTextOnPrimary,
+    },
+    secondaryButton: {
+      backgroundColor: colors.card,
+      borderRadius: radius.lg,
+      height: 48,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    secondaryButtonText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: colors.text,
+    },
+    errorText: {
+      fontSize: 14,
+      color: colors.danger,
+      marginTop: 8,
+    },
+  });
+}
 
 export default ProfileScreen;
 

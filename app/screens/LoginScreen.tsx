@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -7,12 +7,15 @@ import type { RootStackParamList } from '../navigation/AppNavigator';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../services/firebaseConfig';
 import { ensureUserProfile } from '../services/firestore';
-import { colors } from '../theme/colors';
+import { useTheme } from '../theme/useTheme';
+import type { Colors } from '../theme/colors';
 
 type LoginScreenNavigation = NativeStackNavigationProp<RootStackParamList, 'Login'>;
 
 const LoginScreen: React.FC = () => {
   const navigation = useNavigation<LoginScreenNavigation>();
+  const { colors, radius } = useTheme();
+  const styles = useMemo(() => makeStyles(colors, radius), [colors, radius]);
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -47,15 +50,18 @@ const LoginScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>TeamSplit</Text>
-      <Text style={styles.subtitle}>Welcome back! Log in to continue tracking and splitting expenses.</Text>
+      <View style={styles.logoWrap}>
+        <Text style={styles.logoS}>TS</Text>
+        <Text style={styles.brandName}>Team Split</Text>
+        <Text style={styles.subtitle}>Welcome back! Log in to continue.</Text>
+      </View>
 
+      <Text style={styles.label}>Email</Text>
       <View style={styles.inputRow}>
-        <Ionicons name="mail-outline" size={20} color="#6b7280" style={styles.inputIcon} />
         <TextInput
-          style={styles.inputInner}
+          style={styles.input}
           placeholder="Enter your email"
-          placeholderTextColor="#6b7280"
+          placeholderTextColor={colors.mutedText}
           value={email}
           onChangeText={setEmail}
           keyboardType="email-address"
@@ -63,12 +69,12 @@ const LoginScreen: React.FC = () => {
         />
       </View>
 
+      <Text style={styles.label}>Password</Text>
       <View style={styles.inputRow}>
-        <Ionicons name="lock-closed-outline" size={20} color="#6b7280" style={styles.inputIcon} />
         <TextInput
-          style={styles.inputInner}
+          style={styles.input}
           placeholder="Enter your password"
-          placeholderTextColor="#6b7280"
+          placeholderTextColor={colors.mutedText}
           value={password}
           onChangeText={setPassword}
           secureTextEntry={!showPassword}
@@ -81,7 +87,7 @@ const LoginScreen: React.FC = () => {
           <Ionicons
             name={showPassword ? 'eye-off-outline' : 'eye-outline'}
             size={22}
-            color="#6b7280"
+            color={colors.mutedText}
           />
         </TouchableOpacity>
       </View>
@@ -102,14 +108,27 @@ const LoginScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
+function makeStyles(colors: Colors, radius: { lg: number }) {
+  return StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
+    paddingTop: 56,
     justifyContent: 'center',
   },
-  title: {
+  logoWrap: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  logoS: {
+    fontSize: 56,
+    fontWeight: '700',
+    color: colors.primary,
+    letterSpacing: -1,
+    marginBottom: 8,
+  },
+  brandName: {
     fontSize: 32,
     fontWeight: '700',
     color: colors.text,
@@ -119,26 +138,28 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 14,
     color: colors.mutedText,
+    marginBottom: 0,
     textAlign: 'center',
-    marginBottom: 32,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.mutedText,
+    marginBottom: 8,
   },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
+    backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 12,
-    marginBottom: 16,
-    paddingVertical: 4,
+    borderRadius: radius.lg,
+    marginBottom: 20,
   },
-  inputIcon: {
-    marginLeft: 14,
-  },
-  inputInner: {
+  input: {
     flex: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    height: 48,
+    paddingHorizontal: 16,
     color: colors.text,
     fontSize: 16,
   },
@@ -147,9 +168,10 @@ const styles = StyleSheet.create({
   },
   button: {
     backgroundColor: colors.primary,
-    borderRadius: 999,
-    paddingVertical: 14,
+    borderRadius: radius.lg,
+    height: 48,
     alignItems: 'center',
+    justifyContent: 'center',
     marginTop: 8,
   },
   buttonText: {
@@ -163,7 +185,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   footerRow: {
-    marginTop: 16,
+    marginTop: 20,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
@@ -178,6 +200,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginLeft: 4,
   },
-});
+  });
+}
 
 export default LoginScreen;

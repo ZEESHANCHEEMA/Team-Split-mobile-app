@@ -1,7 +1,7 @@
 PODS:
   - EXConstants (55.0.7):
     - ExpoModulesCore
-  - Expo (55.0.6):
+  - Expo (55.0.5):
     - ExpoModulesCore
     - hermes-engine
     - RCTRequired
@@ -44,7 +44,7 @@ PODS:
     - ExpoModulesCore
   - ExpoLogBox (55.0.7):
     - React-Core
-  - ExpoModulesCore (55.0.15):
+  - ExpoModulesCore (55.0.14):
     - ExpoModulesJSI
     - hermes-engine
     - RCTRequired
@@ -68,7 +68,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - ExpoModulesJSI (55.0.15):
+  - ExpoModulesJSI (55.0.14):
     - hermes-engine
     - React-Core
     - React-runtimescheduler
@@ -1999,17 +1999,17 @@ PODS:
   - Yoga (0.0.0)
 
 DEPENDENCIES:
-  - EXConstants (from `../node_modules/expo-constants/ios`)
+  - EXConstants (from `../node_modules/expo/node_modules/expo-constants/ios`)
   - Expo (from `../node_modules/expo`)
-  - ExpoAsset (from `../node_modules/expo-asset/ios`)
+  - ExpoAsset (from `../node_modules/expo/node_modules/expo-asset/ios`)
   - ExpoContacts (from `../node_modules/expo-contacts/ios`)
-  - "ExpoDomWebView (from `../node_modules/@expo/dom-webview/ios`)"
-  - ExpoFileSystem (from `../node_modules/expo-file-system/ios`)
+  - "ExpoDomWebView (from `../node_modules/expo/node_modules/@expo/log-box/node_modules/@expo/dom-webview/ios`)"
+  - ExpoFileSystem (from `../node_modules/expo/node_modules/expo-file-system/ios`)
   - ExpoFont (from `../node_modules/expo-font/ios`)
   - ExpoImagePicker (from `../node_modules/expo-image-picker/ios`)
-  - ExpoKeepAwake (from `../node_modules/expo-keep-awake/ios`)
+  - ExpoKeepAwake (from `../node_modules/expo/node_modules/expo-keep-awake/ios`)
   - ExpoLinearGradient (from `../node_modules/expo-linear-gradient/ios`)
-  - "ExpoLogBox (from `../node_modules/@expo/log-box`)"
+  - "ExpoLogBox (from `../node_modules/expo/node_modules/@expo/log-box`)"
   - ExpoModulesCore (from `../node_modules/expo-modules-core`)
   - ExpoModulesJSI (from `../node_modules/expo-modules-core`)
   - ExpoSharing (from `../node_modules/expo-sharing/ios`)
@@ -2094,27 +2094,27 @@ DEPENDENCIES:
 
 EXTERNAL SOURCES:
   EXConstants:
-    :path: "../node_modules/expo-constants/ios"
+    :path: "../node_modules/expo/node_modules/expo-constants/ios"
   Expo:
     :path: "../node_modules/expo"
   ExpoAsset:
-    :path: "../node_modules/expo-asset/ios"
+    :path: "../node_modules/expo/node_modules/expo-asset/ios"
   ExpoContacts:
     :path: "../node_modules/expo-contacts/ios"
   ExpoDomWebView:
-    :path: "../node_modules/@expo/dom-webview/ios"
+    :path: "../node_modules/expo/node_modules/@expo/log-box/node_modules/@expo/dom-webview/ios"
   ExpoFileSystem:
-    :path: "../node_modules/expo-file-system/ios"
+    :path: "../node_modules/expo/node_modules/expo-file-system/ios"
   ExpoFont:
     :path: "../node_modules/expo-font/ios"
   ExpoImagePicker:
     :path: "../node_modules/expo-image-picker/ios"
   ExpoKeepAwake:
-    :path: "../node_modules/expo-keep-awake/ios"
+    :path: "../node_modules/expo/node_modules/expo-keep-awake/ios"
   ExpoLinearGradient:
     :path: "../node_modules/expo-linear-gradient/ios"
   ExpoLogBox:
-    :path: "../node_modules/@expo/log-box"
+    :path: "../node_modules/expo/node_modules/@expo/log-box"
   ExpoModulesCore:
     :path: "../node_modules/expo-modules-core"
   ExpoModulesJSI:
@@ -2279,7 +2279,7 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   EXConstants: b3c63be5f8648e4ab8e6ff5099b62f629247f969
-  Expo: 9a502b466698a5e33c0ba6b749ef50d7f8a02477
+  Expo: ed1258b36d29c6b5021951ab7933754e765587cb
   ExpoAsset: bdc7bc21fe25d197c3aa7547e14c12c42087d9c9
   ExpoContacts: 72022ddd3f0f0e00b873d25898d703a7f656b0d1
   ExpoDomWebView: f101fb3db4b6eec4163fca51f7507189b7e48661
@@ -2289,8 +2289,8 @@ SPEC CHECKSUMS:
   ExpoKeepAwake: 7f3b28c361c37389b18841bb52a58003b39fcb33
   ExpoLinearGradient: 499856f296f83c05279d18447bdb57ab0e06d294
   ExpoLogBox: 89b634d5a8a64c4a6a7caad8f9985a28463c7002
-  ExpoModulesCore: b40499585cec5bfd14d45ce04f0c42d3d2ec22bb
-  ExpoModulesJSI: 46dab6c6d9e181bf94757367a0d569bfc7fffd99
+  ExpoModulesCore: d3cc76390a012b1027b08e1c38d0a8cdb6978531
+  ExpoModulesJSI: a554588f3260ee3c44a3e7f4a8151c2b9ffdb024
   ExpoSharing: 5f1435af23bcf740c63b1d322400d1e26bf77393
   ExpoSQLite: 77506d3d056c57118280d1e2a2d76cc06e4926b3
   FBLazyVector: 32e9ed0301d0fcbc1b2b341dd7fcbf291f51eb83

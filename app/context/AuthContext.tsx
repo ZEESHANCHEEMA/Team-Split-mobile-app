@@ -2,6 +2,9 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User } from 'firebase/auth';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from '../services/firebaseConfig';
+import { store } from '../store';
+import { setUser, clearUser } from '../store/slices/authSlice';
+import { clearCache } from '../store/slices/cacheSlice';
 
 interface AuthContextValue {
   user: User | null;
@@ -12,12 +15,25 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUserState] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, currentUser => {
-      setUser(currentUser);
+      setUserState(currentUser);
+      if (currentUser) {
+        store.dispatch(
+          setUser({
+            uid: currentUser.uid,
+            email: currentUser.email ?? null,
+            displayName: currentUser.displayName ?? null,
+            photoURL: currentUser.photoURL ?? null,
+          })
+        );
+      } else {
+        store.dispatch(clearUser());
+        store.dispatch(clearCache());
+      }
       setLoading(false);
     });
 
@@ -26,6 +42,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     await signOut(auth);
+    store.dispatch(clearUser());
+    store.dispatch(clearCache());
   };
 
   return (

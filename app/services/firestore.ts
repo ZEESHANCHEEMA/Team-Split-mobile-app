@@ -22,6 +22,7 @@ import type {
   TeamSummary,
   GuestMember,
   MemberBalanceSummary,
+  ActivityExpense,
 } from '../types/firestore';
 
 const USERS = 'users';
@@ -36,6 +37,8 @@ function toUserProfile(data: Record<string, unknown>, id: string): UserProfile {
     email: (data.email as string) || '',
     phone: (data.phone as string) || '',
     photoUrl: (data.photoUrl as string) || '',
+    country: (data.country as string) || undefined,
+    currency: (data.currency as string) || undefined,
     createdAt: { seconds: t.seconds, nanoseconds: t.nanoseconds },
   };
 }
@@ -53,6 +56,7 @@ function toTeam(data: Record<string, unknown>, id: string): Team {
       id: g.id,
       name: g.name,
     })),
+    icon: typeof data.icon === 'string' ? data.icon : undefined,
     createdAt: { seconds: t.seconds, nanoseconds: t.nanoseconds },
   };
 }
@@ -75,24 +79,26 @@ export async function ensureUserProfile(
   displayName: string,
   email: string,
   phone?: string,
-  photoUrl?: string
+  photoUrl?: string,
+  country?: string,
+  currency?: string
 ): Promise<void> {
   const ref = doc(db, USERS, uid);
   const snap = await getDoc(ref);
+  const payload: Record<string, unknown> = {
+    displayName,
+    email,
+    phone: phone || null,
+    photoUrl: photoUrl || null,
+    country: country || null,
+    currency: currency || null,
+  };
   if (snap.exists()) {
-    await setDoc(
-      ref,
-      { displayName, email, phone: phone || null, photoUrl: photoUrl || null, updatedAt: serverTimestamp() },
-      { merge: true }
-    );
+    payload.updatedAt = serverTimestamp();
+    await setDoc(ref, payload, { merge: true });
   } else {
-    await setDoc(ref, {
-      displayName,
-      email,
-      phone: phone || null,
-      photoUrl: photoUrl || null,
-      createdAt: serverTimestamp(),
-    });
+    payload.createdAt = serverTimestamp();
+    await setDoc(ref, payload);
   }
 }
 
@@ -108,12 +114,18 @@ export async function updateUserProfile(
   displayName: string,
   email: string,
   phone?: string,
-  photoUrl?: string
+  photoUrl?: string,
+  country?: string,
+  currency?: string
 ): Promise<void> {
-  await ensureUserProfile(uid, displayName, email, phone, photoUrl);
+  await ensureUserProfile(uid, displayName, email, phone, photoUrl, country, currency);
 }
 
-export async function createTeam(name: string, memberIds: string[]): Promise<string> {
+export async function createTeam(
+  name: string,
+  memberIds: string[],
+  icon?: string
+): Promise<string> {
   const uid = auth.currentUser?.uid;
   if (!uid) throw new Error('Not signed in');
   const ref = await addDoc(collection(db, TEAMS), {
@@ -121,6 +133,7 @@ export async function createTeam(name: string, memberIds: string[]): Promise<str
     createdBy: uid,
     memberIds: memberIds.length ? memberIds : [uid],
     totalAmount: 0,
+    icon: icon || null,
     createdAt: serverTimestamp(),
   });
   return ref.id;
@@ -178,7 +191,16 @@ export async function getDashboardTeams(uid: string): Promise<TeamSummary[]> {
     const balance = computeBalanceForUserInTeam(expenses, uid);
     const youOwe = balance < 0 ? Math.abs(balance) : 0;
     const owedToYou = balance > 0 ? balance : 0;
-    result.push({ id: team.id, name: team.name, youOwe, owedToYou });
+    const memberCount =
+      (team.memberIds?.length || 0) + (team.guestMembers?.length || 0);
+    result.push({
+      id: team.id,
+      name: team.name,
+      youOwe,
+      owedToYou,
+      memberCount,
+      icon: team.icon,
+    });
   }
   return result;
 }
@@ -247,6 +269,55 @@ export async function deleteExpense(teamId: string, expenseId: string): Promise<
   await deleteDoc(ref);
   const teamRef = doc(db, TEAMS, teamId);
   await updateDoc(teamRef, { totalAmount: increment(-prevAmount) });
+}
+
+/** Delete a team and all its expenses. Only the team creator can delete. */
+export async function deleteTeam(teamId: string): Promise<void> {
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error('Not signed in');
+  const team = await getTeam(teamId);
+  if (!team) throw new Error('Team not found');
+  if (team.createdBy !== uid) {
+    throw new Error('Only the group creator can delete the group');
+  }
+  const expenses = await getExpensesForTeam(teamId);
+  const expensesRef = collection(db, TEAMS, teamId, EXPENSES);
+  for (const e of expenses) {
+    await deleteDoc(doc(expensesRef, e.id));
+  }
+  await deleteDoc(doc(db, TEAMS, teamId));
+}
+
+/**
+ * Remove a member from a team (or leave the team if memberId is current user).
+ * - Only the creator can remove other members.
+ * - Any member can remove themselves (leave).
+ */
+export async function removeMemberFromTeam(teamId: string, memberId: string): Promise<void> {
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error('Not signed in');
+  const team = await getTeam(teamId);
+  if (!team) throw new Error('Team not found');
+  const isLeaving = memberId === uid;
+  if (!isLeaving && team.createdBy !== uid) {
+    throw new Error('Only the group creator can remove members');
+  }
+  const ref = doc(db, TEAMS, teamId);
+  const updates: Record<string, unknown> = {};
+  const isGuest = team.guestMembers?.some((g) => g.id === memberId);
+  if (isGuest) {
+    const guestMembers = (team.guestMembers || []).filter((g) => g.id !== memberId);
+    updates.guestMembers = guestMembers;
+  } else {
+    const memberIds = (team.memberIds || []).filter((id) => id !== memberId);
+    const noGuests = (team.guestMembers?.length ?? 0) === 0;
+    if (memberIds.length === 0 && noGuests && team.createdBy === uid) {
+      await deleteTeam(teamId);
+      return;
+    }
+    updates.memberIds = memberIds;
+  }
+  await updateDoc(ref, updates);
 }
 
 export async function addGuestMemberToTeam(teamId: string, name: string): Promise<GuestMember> {
@@ -338,6 +409,98 @@ export async function getMemberBalancesForUser(uid: string): Promise<MemberBalan
 
   result.sort((a, b) => Math.abs(b.net) - Math.abs(a.net));
   return result;
+}
+
+/** Per-member balance within one team (reference: getMemberBalance). For current user's view. */
+export async function getMemberBalancesForTeam(
+  teamId: string,
+  currentUserId: string
+): Promise<MemberBalanceSummary[]> {
+  const team = await getTeam(teamId);
+  if (!team) return [];
+  const expenses = await getExpensesForTeam(teamId);
+  const memberIds = team.memberIds || [];
+  const guestMembers = team.guestMembers || [];
+  const allMemberIds = [...new Set([...memberIds, ...guestMembers.map((g) => g.id)])];
+  const balances = new Map<string, number>();
+
+  for (const mid of allMemberIds) {
+    balances.set(mid, 0);
+  }
+
+  for (const e of expenses) {
+    const share = e.splitBetween.length ? e.amount / e.splitBetween.length : 0;
+    if (e.paidBy === currentUserId) {
+      for (const pid of e.splitBetween) {
+        if (pid === currentUserId) continue;
+        balances.set(pid, (balances.get(pid) ?? 0) + share);
+      }
+    } else if (e.splitBetween.includes(currentUserId) && allMemberIds.includes(e.paidBy)) {
+      balances.set(e.paidBy, (balances.get(e.paidBy) ?? 0) - share);
+    }
+  }
+
+  const nameCache = new Map<string, string>();
+  for (const g of guestMembers) {
+    nameCache.set(g.id, g.name);
+  }
+  for (const id of allMemberIds) {
+    if (nameCache.has(id)) continue;
+    if (id === currentUserId) {
+      nameCache.set(id, 'You');
+      continue;
+    }
+    try {
+      const profile = await getUserProfile(id);
+      nameCache.set(id, profile?.displayName || profile?.email || 'Friend');
+    } catch {
+      nameCache.set(id, 'Friend');
+    }
+  }
+
+  const result: MemberBalanceSummary[] = [];
+  for (const id of allMemberIds) {
+    const net = balances.get(id) ?? 0;
+    if (id === currentUserId) continue;
+    result.push({
+      id,
+      name: nameCache.get(id) ?? 'Friend',
+      net,
+    });
+  }
+  return result;
+}
+
+/** Resolve paidBy uid to display name from team members or user profile. */
+async function resolvePaidByName(
+  team: Team,
+  paidByUid: string
+): Promise<string> {
+  const guest = team.guestMembers?.find((g) => g.id === paidByUid);
+  if (guest) return guest.name;
+  try {
+    const profile = await getUserProfile(paidByUid);
+    if (profile?.displayName) return profile.displayName;
+    if (profile?.email) return profile.email;
+  } catch {
+    // ignore
+  }
+  return 'Someone';
+}
+
+/** All expenses across user's teams, sorted by date (newest first) for Activity screen. */
+export async function getRecentActivity(uid: string, limit = 50): Promise<ActivityExpense[]> {
+  const teams = await getTeamsForUser(uid);
+  const items: ActivityExpense[] = [];
+  for (const team of teams) {
+    const expenses = await getExpensesForTeam(team.id);
+    for (const e of expenses) {
+      const paidByName = await resolvePaidByName(team, e.paidBy);
+      items.push({ ...e, teamId: team.id, teamName: team.name, paidByName });
+    }
+  }
+  items.sort((a, b) => b.createdAt.seconds - a.createdAt.seconds);
+  return items.slice(0, limit);
 }
 
 export { CURRENCY };
