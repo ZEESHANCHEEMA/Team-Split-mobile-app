@@ -65,7 +65,7 @@ const SettingsScreen: React.FC = () => {
         <Text style={styles.sectionTitle}>Account</Text>
         <TouchableOpacity
           style={styles.row}
-          onPress={() => navigation.navigate('Profile')}
+          onPress={() => navigation.navigate('Profile', { editing: true })}
           activeOpacity={0.7}
         >
           <Ionicons name="person-outline" size={20} color={colors.mutedText} />

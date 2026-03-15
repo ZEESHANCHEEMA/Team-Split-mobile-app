@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { auth } from '../services/firebaseConfig';
 import { createTeam, addGuestMemberToTeam } from '../services/firestore';
+import { showToast } from '../utils/toast';
 import { useTheme } from '../theme/useTheme';
 import type { Colors } from '../theme/colors';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -52,12 +53,16 @@ const NewTeamScreen: React.FC<Props> = ({ navigation }) => {
   const handleCreate = async () => {
     const trimmed = name.trim();
     if (!trimmed) {
-      setError('Enter a team name');
+      const message = 'Enter a team name';
+      setError(message);
+      showToast(message);
       return;
     }
     const uid = auth.currentUser?.uid;
     if (!uid) {
-      setError('Not signed in');
+      const message = 'Not signed in';
+      setError(message);
+      showToast(message);
       return;
     }
     setLoading(true);
@@ -69,8 +74,11 @@ const NewTeamScreen: React.FC<Props> = ({ navigation }) => {
         await addGuestMemberToTeam(teamId, memberName);
       }
       navigation.goBack();
+      showToast('Team created');
     } catch {
-      setError('Could not create team. Try again.');
+      const message = 'Could not create team. Try again.';
+      setError(message);
+      showToast(message);
     } finally {
       setLoading(false);
     }

@@ -17,6 +17,7 @@ import {
   updatePassword,
 } from 'firebase/auth';
 import { auth } from '../services/firebaseConfig';
+import { showToast } from '../utils/toast';
 import { useTheme } from '../theme/useTheme';
 import type { Colors } from '../theme/colors';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -42,24 +43,34 @@ const ChangePasswordScreen: React.FC<Props> = ({ navigation }) => {
     const newP = newPassword.trim();
     const conf = confirmPassword.trim();
     if (!cur) {
-      setError('Enter your current password.');
+      const message = 'Enter your current password.';
+      setError(message);
+      showToast(message);
       return;
     }
     if (!newP) {
-      setError('Enter a new password.');
+      const message = 'Enter a new password.';
+      setError(message);
+      showToast(message);
       return;
     }
     if (newP.length < 6) {
-      setError('New password must be at least 6 characters.');
+      const message = 'New password must be at least 6 characters.';
+      setError(message);
+      showToast(message);
       return;
     }
     if (newP !== conf) {
-      setError('New passwords do not match.');
+      const message = 'New passwords do not match.';
+      setError(message);
+      showToast(message);
       return;
     }
     const user = auth.currentUser;
     if (!user?.email) {
-      setError('Not signed in.');
+      const message = 'Not signed in.';
+      setError(message);
+      showToast(message);
       return;
     }
     setLoading(true);
@@ -72,15 +83,22 @@ const ChangePasswordScreen: React.FC<Props> = ({ navigation }) => {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
+      showToast('Password updated');
       setTimeout(() => navigation.goBack(), 1500);
     } catch (e: unknown) {
       const err = e as { code?: string; message?: string };
       if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
-        setError('Current password is incorrect.');
+        const message = 'Current password is incorrect.';
+        setError(message);
+        showToast(message);
       } else if (err.code === 'auth/weak-password') {
-        setError('New password is too weak.');
+        const message = 'New password is too weak.';
+        setError(message);
+        showToast(message);
       } else {
-        setError(err.message || 'Could not update password. Try again.');
+        const message = err.message || 'Could not update password. Try again.';
+        setError(message);
+        showToast(message);
       }
     } finally {
       setLoading(false);

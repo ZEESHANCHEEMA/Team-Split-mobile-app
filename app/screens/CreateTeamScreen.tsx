@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { auth } from '../services/firebaseConfig';
 import { getDashboardTeams } from '../services/firestore';
-import type { TeamSummary } from '../types/firestore';
 import { useCurrency } from '../theme/useCurrency';
 import { useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '../theme/useTheme';
@@ -21,6 +20,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { MainTabParamList, RootStackParamList } from '../navigation/AppNavigator';
 import type { CompositeNavigationProp } from '@react-navigation/native';
 import { useNavigation } from '@react-navigation/native';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { setDashboardData } from '../store/slices/cacheSlice';
 
 type CreateTeamNav = CompositeNavigationProp<
   NativeStackNavigationProp<MainTabParamList, 'CreateTeam'>,
@@ -29,34 +30,41 @@ type CreateTeamNav = CompositeNavigationProp<
 
 const CreateTeamScreen: React.FC = () => {
   const navigation = useNavigation<CreateTeamNav>();
+  const dispatch = useAppDispatch();
   const { colors, radius } = useTheme();
   const styles = useMemo(() => makeStyles(colors, radius), [colors, radius]);
   const CURRENCY = useCurrency();
-  const [teams, setTeams] = useState<TeamSummary[]>([]);
-  const [listLoading, setListLoading] = useState(true);
+  const { teams, lastFetchedAt } = useAppSelector((s) => s.cache);
+  const [listLoading, setListLoading] = useState(!lastFetchedAt);
 
   const loadTeams = useCallback(async () => {
     const uid = auth.currentUser?.uid;
     if (!uid) {
-      setTeams([]);
+      dispatch(setDashboardData({ teams: [], memberBalances: [] }));
       setListLoading(false);
       return;
     }
     try {
       const data = await getDashboardTeams(uid);
-      setTeams(data);
+      // Reuse the same cache slice used by Dashboard
+      dispatch(setDashboardData({ teams: data, memberBalances: [] }));
     } catch {
-      setTeams([]);
+      dispatch(setDashboardData({ teams: [], memberBalances: [] }));
     } finally {
       setListLoading(false);
     }
-  }, []);
+  }, [dispatch]);
 
   useFocusEffect(
     useCallback(() => {
+      // If we already have cached teams, show them immediately and avoid refetching on every focus
+      if (lastFetchedAt && teams.length > 0) {
+        setListLoading(false);
+        return;
+      }
       setListLoading(true);
       loadTeams();
-    }, [loadTeams])
+    }, [lastFetchedAt, teams.length, loadTeams])
   );
 
   const handleTeamPress = (teamId: string) => {

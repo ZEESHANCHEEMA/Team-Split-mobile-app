@@ -49,7 +49,7 @@ export type MainTabParamList = {
   CreateTeam: undefined;
   Split: undefined;
   Activity: undefined;
-  Profile: undefined;
+  Profile: { editing?: boolean } | undefined;
   Settings: undefined;
 };
 

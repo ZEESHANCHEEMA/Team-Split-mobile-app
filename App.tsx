@@ -8,6 +8,7 @@ import { AuthProvider, useAuthContext } from './app/context/AuthContext';
 import { store, persistor } from './app/store';
 import { getColors } from './app/theme/colors';
 import type { RootState } from './app/store';
+import Toast from 'react-native-toast-message';
 
 const Root: React.FC = () => {
   const { loading } = useAuthContext();
@@ -33,6 +34,7 @@ const Root: React.FC = () => {
     <>
       <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
       <AppNavigator />
+      <Toast />
     </>
   );
 };

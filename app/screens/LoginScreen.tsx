@@ -1,5 +1,15 @@
 import React, { useState, useMemo } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -7,6 +17,7 @@ import type { RootStackParamList } from '../navigation/AppNavigator';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../services/firebaseConfig';
 import { ensureUserProfile } from '../services/firestore';
+import { showToast } from '../utils/toast';
 import { useTheme } from '../theme/useTheme';
 import type { Colors } from '../theme/colors';
 
@@ -37,74 +48,92 @@ const LoginScreen: React.FC = () => {
       } catch {
         // Firestore may not be set up yet; still allow login
       }
+      showToast('Logged in');
       navigation.reset({
         index: 0,
         routes: [{ name: 'MainTabs' }],
       });
     } catch (e) {
-      setError('Unable to login. Check your credentials.');
+      const message = 'Unable to login. Check your credentials.';
+      setError(message);
+      showToast(message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.logoWrap}>
-        <Text style={styles.logoS}>TS</Text>
-        <Text style={styles.brandName}>Team Split</Text>
-        <Text style={styles.subtitle}>Welcome back! Log in to continue.</Text>
-      </View>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={56}
+    >
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.logoWrap}>
+          <Text style={styles.logoS}>TS</Text>
+          <Text style={styles.brandName}>Team Split</Text>
+          <Text style={styles.subtitle}>Welcome back! Log in to continue.</Text>
+        </View>
 
-      <Text style={styles.label}>Email</Text>
-      <View style={styles.inputRow}>
-        <TextInput
-          style={styles.input}
-          placeholder="Enter your email"
-          placeholderTextColor={colors.mutedText}
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-        />
-      </View>
-
-      <Text style={styles.label}>Password</Text>
-      <View style={styles.inputRow}>
-        <TextInput
-          style={styles.input}
-          placeholder="Enter your password"
-          placeholderTextColor={colors.mutedText}
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry={!showPassword}
-        />
-        <TouchableOpacity
-          onPress={() => setShowPassword((p) => !p)}
-          style={styles.eyeButton}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-        >
-          <Ionicons
-            name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-            size={22}
-            color={colors.mutedText}
+        <Text style={styles.label}>Email</Text>
+        <View style={styles.inputRow}>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter your email"
+            placeholderTextColor={colors.mutedText}
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
           />
+        </View>
+
+        <Text style={styles.label}>Password</Text>
+        <View style={styles.inputRow}>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter your password"
+            placeholderTextColor={colors.mutedText}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry={!showPassword}
+          />
+          <TouchableOpacity
+            onPress={() => setShowPassword((p) => !p)}
+            style={styles.eyeButton}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Ionicons
+              name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+              size={22}
+              color={colors.mutedText}
+            />
+          </TouchableOpacity>
+        </View>
+
+        {error && <Text style={styles.error}>{error}</Text>}
+
+        <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
+          {loading ? (
+            <ActivityIndicator color={colors.primaryTextOnPrimary} />
+          ) : (
+            <Text style={styles.buttonText}>Login</Text>
+          )}
         </TouchableOpacity>
-      </View>
 
-      {error && <Text style={styles.error}>{error}</Text>}
-
-      <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
-        {loading ? <ActivityIndicator color={colors.primaryTextOnPrimary} /> : <Text style={styles.buttonText}>Login</Text>}
-      </TouchableOpacity>
-
-      <View style={styles.footerRow}>
-        <Text style={styles.footerText}>Don’t have an account?</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-          <Text style={styles.footerLink}>Register</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+        <View style={styles.footerRow}>
+          <Text style={styles.footerText}>Don’t have an account?</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+            <Text style={styles.footerLink}>Register</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -113,8 +142,15 @@ function makeStyles(colors: Colors, radius: { lg: number }) {
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: 20,
     paddingTop: 56,
+    paddingBottom: 40,
     justifyContent: 'center',
   },
   logoWrap: {

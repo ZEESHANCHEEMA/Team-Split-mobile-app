@@ -85,19 +85,28 @@ export async function ensureUserProfile(
 ): Promise<void> {
   const ref = doc(db, USERS, uid);
   const snap = await getDoc(ref);
-  const payload: Record<string, unknown> = {
-    displayName,
-    email,
-    phone: phone || null,
-    photoUrl: photoUrl || null,
-    country: country || null,
-    currency: currency || null,
-  };
   if (snap.exists()) {
-    payload.updatedAt = serverTimestamp();
+    // Merge only fields we have so we don't overwrite saved phone/country/currency on login
+    const payload: Record<string, unknown> = {
+      displayName,
+      email,
+      updatedAt: serverTimestamp(),
+    };
+    if (phone !== undefined) payload.phone = phone || null;
+    if (photoUrl !== undefined) payload.photoUrl = photoUrl || null;
+    if (country !== undefined) payload.country = country || null;
+    if (currency !== undefined) payload.currency = currency || null;
     await setDoc(ref, payload, { merge: true });
   } else {
-    payload.createdAt = serverTimestamp();
+    const payload: Record<string, unknown> = {
+      displayName,
+      email,
+      phone: phone ?? null,
+      photoUrl: photoUrl ?? null,
+      country: country ?? null,
+      currency: currency ?? null,
+      createdAt: serverTimestamp(),
+    };
     await setDoc(ref, payload);
   }
 }

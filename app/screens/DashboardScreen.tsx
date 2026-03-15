@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  ScrollView,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -102,7 +103,11 @@ const DashboardScreen: React.FC = () => {
   const displayTeams = teams.slice(0, 3);
 
   return (
-    <View style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={false}
+    >
       <Text style={styles.greeting}>Welcome back 👋</Text>
       <Text style={styles.appTitle}>TeamSplit</Text>
 
@@ -215,9 +220,7 @@ const DashboardScreen: React.FC = () => {
           ))}
         </View>
       )}
-
-      {/*   */}
-    </View>
+    </ScrollView>
   );
 };
 
@@ -228,6 +231,9 @@ function makeStyles(colors: Colors, radius: { xl: number; lg: number }) {
     backgroundColor: colors.background,
     paddingHorizontal: 20,
     paddingTop: 56,
+  },
+  scrollContent: {
+    paddingBottom: 32,
   },
   centered: {
     justifyContent: 'center',

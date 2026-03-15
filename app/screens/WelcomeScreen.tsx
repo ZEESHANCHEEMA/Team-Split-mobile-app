@@ -55,7 +55,12 @@ const WelcomeScreen: React.FC = () => {
       {/* Legal */}
       <Text style={styles.legal}>
         By continuing, you agree to our{' '}
-        <Text style={styles.legalLink}>Terms & Privacy Policy</Text>
+        <Text
+          style={styles.legalLink}
+          onPress={() => navigation.navigate('Terms')}
+        >
+          Terms & Privacy Policy
+        </Text>
       </Text>
     </ScrollView>
   );
@@ -150,6 +155,7 @@ function makeStyles(colors: Colors, radius: { lg: number }) {
   legalLink: {
     fontWeight: '600',
     color: colors.text,
+    textDecorationLine: 'underline',
   },
   });
 }

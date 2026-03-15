@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
@@ -22,7 +23,9 @@ import {
   getExpense,
   updateExpense,
   deleteExpense,
+  removeMemberFromTeam,
 } from '../services/firestore';
+import { showToast } from '../utils/toast';
 import { useCurrency } from '../theme/useCurrency';
 import { useTheme } from '../theme/useTheme';
 import type { Colors } from '../theme/colors';
@@ -51,6 +54,25 @@ const AddExpenseScreen: React.FC<Props> = ({ navigation, route }) => {
   const [addingMember, setAddingMember] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const isEditing = !!expenseId;
+
+  const handleRemoveGuestMember = async (memberId: string) => {
+    // Only allow removing guest members (ids created via addGuestMemberToTeam, usually 'guest_*')
+    if (!memberId.startsWith('guest_')) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await removeMemberFromTeam(teamId, memberId);
+      setMembers((prev) => prev.filter((m) => m.id !== memberId));
+      setSelectedMemberIds((prev) => prev.filter((id) => id !== memberId));
+      if (paidById === memberId) {
+        setPaidById(null);
+      }
+    } catch {
+      setError('Could not remove member. Try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -142,16 +164,22 @@ const AddExpenseScreen: React.FC<Props> = ({ navigation, route }) => {
     const trimmedTitle = title.trim();
     const numAmount = parseFloat(amount.replace(/,/g, '.'));
     if (!trimmedTitle) {
-      setError('Enter a description');
+      const message = 'Enter a description';
+      setError(message);
+      showToast(message);
       return;
     }
     if (!Number.isFinite(numAmount) || numAmount <= 0) {
-      setError('Enter a valid amount');
+      const message = 'Enter a valid amount';
+      setError(message);
+      showToast(message);
       return;
     }
     const uid = auth.currentUser?.uid;
     if (!uid) {
-      setError('Not signed in');
+      const message = 'Not signed in';
+      setError(message);
+      showToast(message);
       return;
     }
     const payerId = paidById || uid;
@@ -162,14 +190,18 @@ const AddExpenseScreen: React.FC<Props> = ({ navigation, route }) => {
     try {
       if (expenseId) {
         await updateExpense(teamId, expenseId, trimmedTitle, numAmount, payerId, splitBetween);
+        showToast('Expense updated');
       } else {
         await addExpense(teamId, trimmedTitle, numAmount, payerId, splitBetween);
+        showToast('Expense added');
       }
       setTitle('');
       setAmount('');
       navigation.goBack();
     } catch {
-      setError('Could not save expense. Try again.');
+      const message = 'Could not save expense. Try again.';
+      setError(message);
+      showToast(message);
     } finally {
       setLoading(false);
     }
@@ -191,10 +223,7 @@ const AddExpenseScreen: React.FC<Props> = ({ navigation, route }) => {
   });
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    <View style={styles.container}>
       <View style={styles.headerRow}>
         <TouchableOpacity
           style={styles.backButton}
@@ -206,219 +235,241 @@ const AddExpenseScreen: React.FC<Props> = ({ navigation, route }) => {
         <Text style={styles.title}>{isEditing ? 'Edit expense' : 'Split a Bill'}</Text>
       </View>
 
-      <Text style={styles.label}>Description</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="e.g. Dinner at Joe's"
-        placeholderTextColor={colors.mutedText}
-        value={title}
-        onChangeText={(t) => {
-          setTitle(t);
-          setError(null);
-        }}
-        editable={!loading}
-      />
-
-     
-      <Text style={styles.label}>Amount ({CURRENCY})</Text>
-      <TextInput
-        style={[styles.input, styles.amountInput]}
-        placeholder="0.00"
-        placeholderTextColor={colors.mutedText}
-        value={amount}
-        onChangeText={(t) => {
-          setAmount(t.replace(/[^0-9.]/g, ''));
-          setError(null);
-        }}
-        keyboardType="decimal-pad"
-        editable={!loading}
-      />
-
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      <View style={styles.addMemberRow}>
+      <KeyboardAvoidingView
+        style={styles.formWrapper}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={56}
+      >
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+        <Text style={styles.label}>Description</Text>
         <TextInput
-          style={[styles.input, styles.addMemberInput]}
-          placeholder="Add member name"
-          placeholderTextColor="#6b7280"
-          value={newMemberName}
+          style={styles.input}
+          placeholder="e.g. Dinner at Joe's"
+          placeholderTextColor={colors.mutedText}
+          value={title}
           onChangeText={(t) => {
-            setNewMemberName(t);
+            setTitle(t);
             setError(null);
           }}
-          editable={!loading && !addingMember}
+          editable={!loading}
         />
-        <TouchableOpacity
-          style={[styles.addMemberButton, (loading || addingMember) && styles.buttonDisabled]}
-          disabled={loading || addingMember || !newMemberName.trim()}
-          onPress={async () => {
-            const trimmed = newMemberName.trim();
-            if (!trimmed) return;
-            setAddingMember(true);
-            try {
-              const guest = await addGuestMemberToTeam(teamId, trimmed);
-              setMembers((prev) => [...prev, { id: guest.id, name: guest.name }]);
-              setSelectedMemberIds((prev) => [...prev, guest.id]);
-              setNewMemberName('');
-            } catch {
-              setError('Could not add member. Try again.');
-            } finally {
-              setAddingMember(false);
-            }
+
+        <Text style={styles.label}>Amount ({CURRENCY})</Text>
+        <TextInput
+          style={[styles.input, styles.amountInput]}
+          placeholder="0.00"
+          placeholderTextColor={colors.mutedText}
+          value={amount}
+          onChangeText={(t) => {
+            setAmount(t.replace(/[^0-9.]/g, ''));
+            setError(null);
           }}
+          keyboardType="decimal-pad"
+          editable={!loading}
+        />
+
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        <View style={styles.addMemberRow}>
+          <TextInput
+            style={[styles.input, styles.addMemberInput]}
+            placeholder="Add member name"
+            placeholderTextColor="#6b7280"
+            value={newMemberName}
+            onChangeText={(t) => {
+              setNewMemberName(t);
+              setError(null);
+            }}
+            editable={!loading && !addingMember}
+          />
+          <TouchableOpacity
+            style={[styles.addMemberButton, (loading || addingMember) && styles.buttonDisabled]}
+            disabled={loading || addingMember || !newMemberName.trim()}
+            onPress={async () => {
+              const trimmed = newMemberName.trim();
+              if (!trimmed) return;
+              setAddingMember(true);
+              try {
+                const guest = await addGuestMemberToTeam(teamId, trimmed);
+                setMembers((prev) => [...prev, { id: guest.id, name: guest.name }]);
+                setSelectedMemberIds((prev) => [...prev, guest.id]);
+                setNewMemberName('');
+              } catch {
+                setError('Could not add member. Try again.');
+              } finally {
+                setAddingMember(false);
+              }
+            }}
+          >
+            {addingMember ? (
+              <ActivityIndicator color={colors.primaryTextOnPrimary} />
+            ) : (
+              <Ionicons name="person-add" size={20} color={colors.primaryTextOnPrimary} />
+            )}
+          </TouchableOpacity>
+        </View>
+        {members.length > 0 && (
+          <View style={styles.paidByContainer}>
+            <Text style={styles.label}>Who paid?</Text>
+            <View style={styles.paidByRow}>
+              {orderedMembers.map((m) => {
+                const isSelected = paidById === m.id;
+                return (
+                  <TouchableOpacity
+                    key={m.id}
+                    style={[
+                      styles.paidByChip,
+                      isSelected && styles.paidByChipSelected,
+                    ]}
+                    disabled={loading}
+                    onPress={() => {
+                      setError(null);
+                      setPaidById(m.id);
+                    }}
+                  >
+                    <Ionicons
+                      name={isSelected ? 'wallet' : 'person-outline'}
+                      size={16}
+                      color={isSelected ? colors.primaryTextOnPrimary : colors.mutedText}
+                    />
+                    <Text
+                      style={[
+                        styles.paidByChipText,
+                        isSelected && styles.paidByChipTextSelected,
+                      ]}
+                    >
+                      {m.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
+        {members.length > 0 && (
+          <View style={styles.splitContainer}>
+            <View style={styles.splitAmongRow}>
+              <Text style={styles.label}>Split among</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setError(null);
+                  setSelectedMemberIds(orderedMembers.map((m) => m.id));
+                }}
+                disabled={loading}
+              >
+                <Text style={styles.selectAllText}>Select all</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.splitMemberList}>
+              {orderedMembers.map((m) => {
+                const isSelected = selectedMemberIds.includes(m.id);
+                const perPerson =
+                  selectedMemberIds.length > 0 && amount
+                    ? parseFloat(amount.replace(/,/g, '.')) / selectedMemberIds.length
+                    : 0;
+              const isGuest = m.id.startsWith('guest_');
+                return (
+                  <TouchableOpacity
+                    key={m.id}
+                    style={[
+                      styles.splitMemberRow,
+                      isSelected && styles.splitMemberRowSelected,
+                    ]}
+                    disabled={loading}
+                    onPress={() => {
+                      setError(null);
+                      setSelectedMemberIds((prev) => {
+                        const exists = prev.includes(m.id);
+                        if (exists) {
+                          if (prev.length === 1) return prev;
+                          return prev.filter((id) => id !== m.id);
+                        }
+                        return [...prev, m.id];
+                      });
+                    }}
+                  >
+                    <View
+                      style={[
+                        styles.splitCheckbox,
+                        isSelected && styles.splitCheckboxSelected,
+                      ]}
+                    >
+                      {isSelected && (
+                        <Ionicons name="checkmark" size={14} color={colors.primaryTextOnPrimary} />
+                      )}
+                    </View>
+                    <Text style={styles.splitMemberName}>{m.name}</Text>
+                    {isSelected && perPerson > 0 && (
+                      <Text style={styles.splitPerPerson}>
+                        {CURRENCY} {perPerson.toFixed(2)}
+                      </Text>
+                    )}
+                  {isGuest && (
+                    <TouchableOpacity
+                      style={styles.removeMemberButton}
+                      onPress={() => handleRemoveGuestMember(m.id)}
+                      disabled={loading}
+                    >
+                      <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                    </TouchableOpacity>
+                  )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
+        <TouchableOpacity
+          style={[styles.button, loading && styles.buttonDisabled]}
+          onPress={handleSubmit}
+          disabled={loading}
         >
-          {addingMember ? (
+          {loading ? (
             <ActivityIndicator color={colors.primaryTextOnPrimary} />
           ) : (
-            <Ionicons name="person-add" size={20} color={colors.primaryTextOnPrimary} />
+            <>
+              <Ionicons
+                name={isEditing ? 'save-outline' : 'checkmark'}
+                size={20}
+                color={colors.primaryTextOnPrimary}
+              />
+              <Text style={styles.buttonText}>
+                {isEditing ? 'Save changes' : 'Split Bill'}
+              </Text>
+            </>
           )}
         </TouchableOpacity>
-      </View>
-      {members.length > 0 && (
-        <View style={styles.paidByContainer}>
-          <Text style={styles.label}>Who paid?</Text>
-          <View style={styles.paidByRow}>
-            {orderedMembers.map((m) => {
-              const isSelected = paidById === m.id;
-              return (
-                <TouchableOpacity
-                  key={m.id}
-                  style={[
-                    styles.paidByChip,
-                    isSelected && styles.paidByChipSelected,
-                  ]}
-                  disabled={loading}
-                  onPress={() => {
-                    setError(null);
-                    setPaidById(m.id);
-                  }}
-                >
-                  <Ionicons
-                    name={isSelected ? 'wallet' : 'person-outline'}
-                    size={16}
-                    color={isSelected ? colors.primaryTextOnPrimary : colors.mutedText}
-                  />
-                  <Text
-                    style={[
-                      styles.paidByChipText,
-                      isSelected && styles.paidByChipTextSelected,
-                    ]}
-                  >
-                    {m.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-      )}
 
-      {members.length > 0 && (
-        <View style={styles.splitContainer}>
-          <View style={styles.splitAmongRow}>
-            <Text style={styles.label}>Split among</Text>
-            <TouchableOpacity
-              onPress={() => {
-                setError(null);
-                setSelectedMemberIds(orderedMembers.map((m) => m.id));
-              }}
-              disabled={loading}
-            >
-              <Text style={styles.selectAllText}>Select all</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.splitMemberList}>
-            {orderedMembers.map((m) => {
-              const isSelected = selectedMemberIds.includes(m.id);
-              const perPerson =
-                selectedMemberIds.length > 0 && amount
-                  ? parseFloat(amount.replace(/,/g, '.')) / selectedMemberIds.length
-                  : 0;
-              return (
-                <TouchableOpacity
-                  key={m.id}
-                  style={[
-                    styles.splitMemberRow,
-                    isSelected && styles.splitMemberRowSelected,
-                  ]}
-                  disabled={loading}
-                  onPress={() => {
-                    setError(null);
-                    setSelectedMemberIds((prev) => {
-                      const exists = prev.includes(m.id);
-                      if (exists) {
-                        if (prev.length === 1) return prev;
-                        return prev.filter((id) => id !== m.id);
-                      }
-                      return [...prev, m.id];
-                    });
-                  }}
-                >
-                  <View
-                    style={[
-                      styles.splitCheckbox,
-                      isSelected && styles.splitCheckboxSelected,
-                    ]}
-                  >
-                    {isSelected && (
-                      <Ionicons name="checkmark" size={14} color={colors.primaryTextOnPrimary} />
-                    )}
-                  </View>
-                  <Text style={styles.splitMemberName}>{m.name}</Text>
-                  {isSelected && perPerson > 0 && (
-                    <Text style={styles.splitPerPerson}>
-                      {CURRENCY} {perPerson.toFixed(2)}
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-      )}
-
-      <TouchableOpacity
-        style={[styles.button, loading && styles.buttonDisabled]}
-        onPress={handleSubmit}
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator color={colors.primaryTextOnPrimary} />
-        ) : (
-          <>
-            <Ionicons
-              name={isEditing ? 'save-outline' : 'checkmark'}
-              size={20}
-              color={colors.primaryTextOnPrimary}
-            />
-            <Text style={styles.buttonText}>
-              {isEditing ? 'Save changes' : 'Split Bill'}
-            </Text>
-          </>
+        {isEditing && (
+          <TouchableOpacity
+            style={styles.deleteButton}
+            disabled={loading}
+            onPress={async () => {
+              if (!expenseId) return;
+              setLoading(true);
+              setError(null);
+              try {
+                await deleteExpense(teamId, expenseId);
+                navigation.goBack();
+              } catch {
+                setError('Could not delete expense. Try again.');
+              } finally {
+                setLoading(false);
+              }
+            }}
+          >
+            <Text style={styles.deleteButtonText}>Delete expense</Text>
+          </TouchableOpacity>
         )}
-      </TouchableOpacity>
-
-      {isEditing && (
-        <TouchableOpacity
-          style={styles.deleteButton}
-          disabled={loading}
-          onPress={async () => {
-            if (!expenseId) return;
-            setLoading(true);
-            setError(null);
-            try {
-              await deleteExpense(teamId, expenseId);
-              navigation.goBack();
-            } catch {
-              setError('Could not delete expense. Try again.');
-            } finally {
-              setLoading(false);
-            }
-          }}
-        >
-          <Text style={styles.deleteButtonText}>Delete expense</Text>
-        </TouchableOpacity>
-      )}
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 };
 
@@ -427,16 +478,28 @@ function makeStyles(colors: Colors, radius: { lg: number }) {
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  formWrapper: {
+    flex: 1,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: 24,
-    paddingTop: 56,
+    paddingTop: 8,
+    paddingBottom: 40,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    paddingHorizontal: 24,
+    paddingTop: 56,
+    paddingBottom: 16,
+    gap: 12,
   },
   backButton: {
-    marginRight: 8,
     padding: 4,
   },
   title: {
@@ -464,7 +527,7 @@ function makeStyles(colors: Colors, radius: { lg: number }) {
     marginBottom: 20,
   },
   amountInput: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '700',
   },
   error: {
@@ -553,6 +616,10 @@ function makeStyles(colors: Colors, radius: { lg: number }) {
   splitPerPerson: {
     fontSize: 14,
     color: colors.mutedText,
+  },
+  removeMemberButton: {
+    marginLeft: 8,
+    padding: 4,
   },
   addMemberRow: {
     flexDirection: 'row',

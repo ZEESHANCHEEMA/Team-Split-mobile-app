@@ -17,15 +17,16 @@ import { auth } from '../services/firebaseConfig';
 import { getUserProfile, updateUserProfile } from '../services/firestore';
 import type { UserProfile } from '../types/firestore';
 import { updateProfile, updateEmail } from 'firebase/auth';
-import type { CompositeNavigationProp } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import type { CompositeNavigationProp, RouteProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useNavigation } from '@react-navigation/native';
 import type { RootStackParamList, MainTabParamList } from '../navigation/AppNavigator';
 import { useAppDispatch } from '../store/hooks';
 import { updateProfileDisplay } from '../store/slices/authSlice';
 import { setCurrency } from '../store/slices/settingsSlice';
 import { useCurrencyCode } from '../theme/useCurrency';
+import { showToast } from '../utils/toast';
 
 type ProfileNav = CompositeNavigationProp<
   BottomTabNavigationProp<MainTabParamList, 'Profile'>,
@@ -34,6 +35,7 @@ type ProfileNav = CompositeNavigationProp<
 
 const ProfileScreen: React.FC = () => {
   const navigation = useNavigation<ProfileNav>();
+  const route = useRoute<RouteProp<MainTabParamList, 'Profile'>>();
   const dispatch = useAppDispatch();
   const { colors, radius } = useTheme();
   const currencyCode = useCurrencyCode();
@@ -45,7 +47,7 @@ const ProfileScreen: React.FC = () => {
   const [photoUrl, setPhotoUrl] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(route.params?.editing === true);
   const [error, setError] = useState<string | null>(null);
   const [showCountryPicker, setShowCountryPicker] = useState(false);
 
@@ -93,7 +95,9 @@ const ProfileScreen: React.FC = () => {
     const trimmedEmail = email.trim();
     const trimmedPhone = phone.trim();
     if (!trimmedName || !trimmedEmail) {
-      setError('Name and email are required.');
+      const message = 'Name and email are required.';
+      setError(message);
+      showToast(message);
       return;
     }
     setSaving(true);
@@ -105,7 +109,9 @@ const ProfileScreen: React.FC = () => {
       await updateProfile(user, { displayName: trimmedName, photoURL: photoUrl });
     } catch (e) {
       setSaving(false);
-      setError('Could not update profile. Please try again.');
+      const message = 'Could not update profile. Please try again.';
+      setError(message);
+      showToast(message);
       return;
     }
 
@@ -135,6 +141,7 @@ const ProfileScreen: React.FC = () => {
     dispatch(updateProfileDisplay({ displayName: trimmedName, email: trimmedEmail, photoURL: photoUrl }));
     setEditing(false);
     setSaving(false);
+    showToast('Profile updated');
   };
 
   const initials =
@@ -179,18 +186,8 @@ const ProfileScreen: React.FC = () => {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-      {/* Header: back + Profile title */}
+      {/* Header */}
       <View style={styles.headerRow}>
-        <TouchableOpacity
-          onPress={() => {
-            if (editing) handleCancelEdit();
-            else navigation.navigate('Settings');
-          }}
-          style={styles.backButton}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-        >
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
         <Text style={styles.screenTitle}>{editing ? 'Edit Profile' : 'Profile'}</Text>
       </View>
 
@@ -260,6 +257,12 @@ const ProfileScreen: React.FC = () => {
       <CountryPicker
         show={showCountryPicker}
         lang="en"
+        inputPlaceholder="Search country or code"
+        searchMessage="No country found"
+        style={{
+          modal: { height: '75%', maxHeight: '75%' },
+          itemsList: { flex: 1 },
+        }}
         pickerButtonOnPress={(item) => {
           const name = item.name?.en ?? item.name?.['en'] ?? Object.values(item.name ?? {})[0] ?? '';
           setCountry(name);

@@ -44,14 +44,16 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>NSContactsUsageDescription</key>
-	<string>Allow $(PRODUCT_NAME) to access your contacts</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>TeamSplit needs access to your photo library so you can choose a profile picture.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>TeamSplit needs camera access to take a profile picture.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Allow $(PRODUCT_NAME) to access your contacts</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Allow $(PRODUCT_NAME) to access your microphone</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>TeamSplit needs permission to save photos to your library.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>TeamSplit needs access to your photo library so you can choose a profile picture.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
