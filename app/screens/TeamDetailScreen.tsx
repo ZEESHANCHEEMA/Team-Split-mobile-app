@@ -8,6 +8,10 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
@@ -20,6 +24,7 @@ import {
   computeBalanceForUserInTeam,
   getMemberBalancesForTeam,
   deleteTeam,
+  updateTeamName,
   removeMemberFromTeam,
 } from '../services/firestore';
 import { useCurrency } from '../theme/useCurrency';
@@ -41,6 +46,8 @@ const TeamDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [editNameVisible, setEditNameVisible] = useState(false);
+  const [editNameValue, setEditNameValue] = useState('');
 
   const load = useCallback(async () => {
     const uid = auth.currentUser?.uid;
@@ -145,6 +152,28 @@ const TeamDetailScreen: React.FC<Props> = ({ navigation, route }) => {
     );
   }, [teamId, team?.name, navigation]);
 
+  const openEditName = useCallback(() => {
+    if (team) {
+      setEditNameValue(team.name);
+      setEditNameVisible(true);
+    }
+  }, [team]);
+
+  const handleSaveEditName = useCallback(async () => {
+    const trimmed = editNameValue.trim();
+    if (!trimmed) return;
+    setActionLoading(true);
+    try {
+      await updateTeamName(teamId, trimmed);
+      setEditNameVisible(false);
+      load();
+    } catch (e) {
+      Alert.alert('Error', (e as Error).message ?? 'Could not update name');
+    } finally {
+      setActionLoading(false);
+    }
+  }, [teamId, editNameValue, load]);
+
   if (loading && !team) {
     return (
       <View style={[styles.container, styles.centered]}>
@@ -183,7 +212,41 @@ const TeamDetailScreen: React.FC<Props> = ({ navigation, route }) => {
           )}
         </View>
         <Text style={styles.title} numberOfLines={1}>{team.name}</Text>
+        {isCreator && (
+          <TouchableOpacity onPress={openEditName} style={styles.editNameButton} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="pencil-outline" size={20} color={colors.mutedText} />
+          </TouchableOpacity>
+        )}
       </View>
+
+      <Modal visible={editNameVisible} transparent animationType="fade">
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setEditNameVisible(false)} />
+          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Edit group name</Text>
+            <TextInput
+              style={[styles.modalInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+              placeholder="Group name"
+              placeholderTextColor={colors.mutedText}
+              value={editNameValue}
+              onChangeText={setEditNameValue}
+              autoFocus
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={[styles.modalButtonCancel, { borderColor: colors.border }]} onPress={() => setEditNameVisible(false)}>
+                <Text style={[styles.modalButtonCancelText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButtonSave, { backgroundColor: colors.primary }]}
+                onPress={handleSaveEditName}
+                disabled={actionLoading || !editNameValue.trim()}
+              >
+                {actionLoading ? <ActivityIndicator size="small" color={colors.primaryTextOnPrimary} /> : <Text style={styles.modalButtonSaveText}>Save</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       {/* Members strip – reference: horizontal scroll, avatar, name, +$X/-$X/Settled */}
       {memberBalances.length > 0 && (
@@ -340,6 +403,62 @@ function makeStyles(colors: Colors, radius: { xl: number; lg: number }) {
     fontWeight: '700',
     color: colors.text,
     flex: 1,
+  },
+  editNameButton: {
+    padding: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 24,
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  modalContent: {
+    borderRadius: radius.xl,
+    padding: 24,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 16,
+  },
+  modalInput: {
+    height: 48,
+    borderRadius: radius.lg,
+    paddingHorizontal: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalButtonCancel: {
+    flex: 1,
+    height: 48,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalButtonCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalButtonSave: {
+    flex: 1,
+    height: 48,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalButtonSaveText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.primaryTextOnPrimary,
   },
   membersSection: {
     marginBottom: 24,

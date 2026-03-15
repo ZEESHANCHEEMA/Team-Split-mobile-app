@@ -280,6 +280,21 @@ export async function deleteExpense(teamId: string, expenseId: string): Promise<
   await updateDoc(teamRef, { totalAmount: increment(-prevAmount) });
 }
 
+/** Update team name. Only the team creator can update. */
+export async function updateTeamName(teamId: string, name: string): Promise<void> {
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error('Not signed in');
+  const team = await getTeam(teamId);
+  if (!team) throw new Error('Team not found');
+  if (team.createdBy !== uid) {
+    throw new Error('Only the group creator can edit the group name');
+  }
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error('Team name cannot be empty');
+  const ref = doc(db, TEAMS, teamId);
+  await updateDoc(ref, { name: trimmed });
+}
+
 /** Delete a team and all its expenses. Only the team creator can delete. */
 export async function deleteTeam(teamId: string): Promise<void> {
   const uid = auth.currentUser?.uid;
@@ -349,13 +364,14 @@ export async function addGuestMemberToTeam(teamId: string, name: string): Promis
 
 export async function getMemberBalancesForUser(uid: string): Promise<MemberBalanceSummary[]> {
   const teams = await getTeamsForUser(uid);
-  const balances = new Map<string, number>();
   const nameCache = new Map<string, string>();
+  const result: MemberBalanceSummary[] = [];
 
   for (const team of teams) {
     const expenses = await getExpensesForTeam(team.id);
     const memberIds = team.memberIds || [];
     const guestMembers = team.guestMembers || [];
+    const teamBalances = new Map<string, number>();
 
     for (const g of guestMembers) {
       if (!nameCache.has(g.id)) {
@@ -371,49 +387,44 @@ export async function getMemberBalancesForUser(uid: string): Promise<MemberBalan
     for (const e of expenses) {
       const share = e.splitBetween.length ? e.amount / e.splitBetween.length : 0;
 
-      // If current user paid, others owe them their share
       if (e.paidBy === uid) {
         for (const participantId of e.splitBetween) {
           if (participantId === uid) continue;
-          balances.set(
+          teamBalances.set(
             participantId,
-            (balances.get(participantId) || 0) + share
+            (teamBalances.get(participantId) || 0) + share
           );
         }
       }
 
-      // If someone else paid and current user is in the split, user owes that payer their share
       if (e.paidBy !== uid && e.splitBetween.includes(uid) && allIds.has(e.paidBy)) {
         const payerId = e.paidBy;
-        balances.set(payerId, (balances.get(payerId) || 0) - share);
+        teamBalances.set(payerId, (teamBalances.get(payerId) || 0) - share);
       }
     }
-  }
 
-  for (const memberId of balances.keys()) {
-    if (!nameCache.has(memberId) && memberId !== uid) {
-      try {
-        const profile = await getUserProfile(memberId);
-        if (profile) {
-          nameCache.set(memberId, profile.displayName || profile.email || 'Friend');
+    for (const memberId of teamBalances.keys()) {
+      if (memberId === uid) continue;
+      if (!nameCache.has(memberId)) {
+        try {
+          const profile = await getUserProfile(memberId);
+          if (profile) {
+            nameCache.set(memberId, profile.displayName || profile.email || 'Friend');
+          }
+        } catch {
+          // ignore
         }
-      } catch {
-        // ignore lookup failures
       }
+      const net = teamBalances.get(memberId) ?? 0;
+      if (net === 0) continue;
+      result.push({
+        id: memberId,
+        name: nameCache.get(memberId) ?? 'Friend',
+        net,
+        teamId: team.id,
+        teamName: team.name,
+      });
     }
-    if (!nameCache.has(memberId)) {
-      nameCache.set(memberId, memberId === uid ? 'You' : 'Friend');
-    }
-  }
-
-  const result: MemberBalanceSummary[] = [];
-  for (const [id, net] of balances.entries()) {
-    if (id === uid) continue;
-    result.push({
-      id,
-      name: nameCache.get(id) ?? 'Friend',
-      net,
-    });
   }
 
   result.sort((a, b) => Math.abs(b.net) - Math.abs(a.net));

@@ -48,6 +48,9 @@ export interface MemberBalanceSummary {
   id: string;
   name: string;
   net: number;
+  /** Team this balance is for (dashboard People summary) */
+  teamId?: string;
+  teamName?: string;
 }
 
 /** Expense with team info for Activity feed (reference: Payer · Team, Settled) */
@@ -56,4 +59,31 @@ export interface ActivityExpense extends Expense {
   teamName: string;
   /** Display name of who paid (for "Payer · Team" line) */
   paidByName?: string;
+}
+
+/** Split for a friend bill (50/50: me + friend) */
+export interface FriendBillSplit {
+  memberId: string; // 'me' or friendId
+  amount: number;
+  paid: boolean;
+}
+
+/** Bill between you and one friend */
+export interface FriendBill {
+  id: string;
+  description: string;
+  totalAmount: number;
+  paidBy: string; // 'me' | friendId
+  splits: FriendBillSplit[];
+  createdAt: { seconds: number; nanoseconds: number };
+}
+
+/** Friend (contact) for 1:1 expense splitting */
+export interface Friend {
+  id: string;
+  name: string;
+  phone?: string;
+  email?: string;
+  bills: FriendBill[];
+  createdAt?: { seconds: number; nanoseconds: number };
 }

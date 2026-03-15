@@ -112,7 +112,7 @@ const DashboardScreen: React.FC = () => {
       <Text style={styles.appTitle}>TeamSplit</Text>
 
       {/* Primary stat card – reference: bg-primary rounded-2xl p-5 */}
-      <View style={styles.primaryCard}>
+      {/* <View style={styles.primaryCard}>
         <Text style={styles.primaryCardLabel}>Total Pending</Text>
         <Text style={styles.primaryCardAmount}>
           {CURRENCY} {totalPending.toFixed(2)}
@@ -125,24 +125,24 @@ const DashboardScreen: React.FC = () => {
             {CURRENCY} {totalSettled.toFixed(2)} settled
           </Text>
         </View>
-      </View>
+      </View> */}
 
-      {/* Two small cards – reference: You're owed / You owe */}
+      {/* Two small cards – You're owed (لینے ہیں) / You owe (دینے ہیں) */}
       <View style={styles.twoColRow}>
         <View style={styles.smallCard}>
           <View style={[styles.smallCardIcon, styles.smallCardIconSuccess]}>
-            <Ionicons name="arrow-down-outline" size={16} color={colors.success} />
+            <Ionicons name="arrow-down-outline" size={16} color={colors.primaryTextOnPrimary} />
           </View>
-          <Text style={styles.smallCardLabel}>You're owed</Text>
+          <Text style={styles.smallCardLabel}>To Receive</Text>
           <Text style={[styles.smallCardAmount, styles.smallCardAmountSuccess]}>
             {CURRENCY} {totalOwedToYou.toFixed(2)}
           </Text>
         </View>
         <View style={styles.smallCard}>
           <View style={[styles.smallCardIcon, styles.smallCardIconWarning]}>
-            <Ionicons name="arrow-up-outline" size={16} color={colors.warning} />
+            <Ionicons name="arrow-up-outline" size={16} color={colors.primaryTextOnPrimary} />
           </View>
-          <Text style={styles.smallCardLabel}>You owe</Text>
+          <Text style={styles.smallCardLabel}>To Pay</Text>
           <Text style={[styles.smallCardAmount, styles.smallCardAmountWarning]}>
             {CURRENCY} {totalYouOwe.toFixed(2)}
           </Text>
@@ -200,11 +200,12 @@ const DashboardScreen: React.FC = () => {
         <View style={styles.peopleSection}>
           <Text style={styles.peopleSectionTitle}>People summary</Text>
           {memberBalances.map((m) => (
-            <View key={m.id} style={styles.personCard}>
+            <View key={m.teamId ? `${m.teamId}_${m.id}` : m.id} style={styles.personCard}>
               <View style={styles.personCardLeft}>
                 <Text style={styles.personName}>{m.name}</Text>
                 <Text style={styles.personSubtitle}>
-                  {m.net > 0 ? 'They owe you' : m.net < 0 ? 'You owe them' : 'Settled up'}
+                  {m.net > 0 ? 'To Receive' : m.net < 0 ? 'To Pay' : 'Settled up'}
+                  {m.teamName ? ` · ${m.teamName}` : ''}
                 </Text>
               </View>
               <Text
@@ -285,11 +286,11 @@ function makeStyles(colors: Colors, radius: { xl: number; lg: number }) {
   },
   smallCard: {
     flex: 1,
-    backgroundColor: colors.card,
+    backgroundColor: colors.primary,
     borderRadius: radius.xl,
     padding: 16,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: 'rgba(255,255,255,0.2)',
   },
   smallCardIcon: {
     width: 32,
@@ -298,28 +299,37 @@ function makeStyles(colors: Colors, radius: { xl: number; lg: number }) {
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
+    backgroundColor: 'rgba(255,255,255,0.25)',
   },
   smallCardIconSuccess: {
-    backgroundColor: 'rgba(30, 155, 107, 0.15)',
+    backgroundColor: 'rgba(255,255,255,0.25)',
   },
   smallCardIconWarning: {
-    backgroundColor: 'rgba(229, 163, 25, 0.15)',
+    backgroundColor: 'rgba(255,255,255,0.25)',
   },
   smallCardLabel: {
     fontSize: 12,
-    color: colors.mutedText,
+    color: colors.primaryTextOnPrimary,
+    opacity: 0.95,
+    paddingBottom: 14,
+  },
+  smallCardLabelUrdu: {
+    fontSize: 11,
+    color: colors.primaryTextOnPrimary,
+    opacity: 0.9,
+    marginTop: 1,
   },
   smallCardAmount: {
     fontSize: 18,
     fontWeight: '700',
-    color: colors.text,
+    color: colors.primaryTextOnPrimary,
     marginTop: 2,
   },
   smallCardAmountSuccess: {
-    color: colors.success,
+    color: '#B8F5D4',
   },
   smallCardAmountWarning: {
-    color: colors.warning,
+    color: '#FEF3C7',
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -425,7 +435,7 @@ function makeStyles(colors: Colors, radius: { xl: number; lg: number }) {
   personSubtitle: {
     fontSize: 12,
     color: colors.mutedText,
-    marginTop: 2,
+    marginTop: 8,
   },
   personAmount: {
     fontSize: 15,

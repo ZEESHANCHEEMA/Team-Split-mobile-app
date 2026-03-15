@@ -1,11 +1,7 @@
 import React from 'react';
 import { Platform } from 'react-native';
-import {
-  NavigationContainer,
-  DefaultTheme,
-  Theme,
-  createNavigationContainerRef,
-} from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme, Theme } from '@react-navigation/native';
+import { rootNavigationRef } from './navigationRef';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -28,6 +24,8 @@ import SettingsScreen from '../screens/SettingsScreen';
 import ChangePasswordScreen from '../screens/ChangePasswordScreen';
 import AboutScreen from '../screens/AboutScreen';
 import TermsScreen from '../screens/TermsScreen';
+import FriendsScreen from '../screens/FriendsScreen';
+import FriendDetailScreen from '../screens/FriendDetailScreen';
 
 export type RootStackParamList = {
   Welcome: undefined;
@@ -38,22 +36,26 @@ export type RootStackParamList = {
   TeamDetail: { teamId: string };
   AddExpense: { teamId: string; expenseId?: string };
   ExpenseDetail: { expenseId: string; teamId: string };
+  FriendDetail: { friendId: string };
+  Profile: { editing?: boolean } | undefined;
   ChangePassword: undefined;
   About: undefined;
   Terms: undefined;
   NotFound: undefined;
 };
 
+// Re-export for screens that need the ref without importing AppNavigator (avoids require cycle)
+export { rootNavigationRef } from './navigationRef';
+
 export type MainTabParamList = {
   Dashboard: undefined;
   CreateTeam: undefined;
   Split: undefined;
+  Friends: undefined;
   Activity: undefined;
   Profile: { editing?: boolean } | undefined;
   Settings: undefined;
 };
-
-export const rootNavigationRef = createNavigationContainerRef<RootStackParamList>();
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const MainTab = createBottomTabNavigator<MainTabParamList>();
@@ -102,8 +104,9 @@ const MainTabsNavigator: React.FC = () => {
           let iconName: keyof typeof Ionicons.glyphMap = 'home-outline';
           if (route.name === 'CreateTeam') iconName = 'people-outline';
           else if (route.name === 'Split') iconName = 'add-circle-outline';
+          else if (route.name === 'Friends') iconName = 'person-outline';
           else if (route.name === 'Activity') iconName = 'receipt-outline';
-          else if (route.name === 'Profile') iconName = 'person-circle-outline';
+          // else if (route.name === 'Profile') iconName = 'person-circle-outline';
           else if (route.name === 'Settings') iconName = 'settings-outline';
           return <Ionicons name={iconName} size={size} color={color} />;
         },
@@ -115,9 +118,9 @@ const MainTabsNavigator: React.FC = () => {
         component={CreateTeamScreen}
         options={{ title: 'Teams' }}
       />
-      {/* <MainTab.Screen name="Split" component={SplitTabScreen} options={{ title: 'Split' }} /> */}
+      <MainTab.Screen name="Friends" component={FriendsScreen} options={{ title: 'Friends' }} />
       <MainTab.Screen name="Activity" component={ActivityScreen} options={{ title: 'Activity' }} />
-      <MainTab.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profile' }} />
+      {/* <MainTab.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profile' }} /> */}
       <MainTab.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings' }} />
     </MainTab.Navigator>
   );
@@ -147,6 +150,8 @@ const AppNavigator: React.FC = () => {
         <Stack.Screen name="TeamDetail" component={TeamDetailScreen} />
         <Stack.Screen name="AddExpense" component={AddExpenseScreen} />
         <Stack.Screen name="ExpenseDetail" component={ExpenseDetailScreen} />
+        <Stack.Screen name="FriendDetail" component={FriendDetailScreen} />
+        <Stack.Screen name="Profile" component={ProfileScreen} />
         <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
         <Stack.Screen name="About" component={AboutScreen} />
         <Stack.Screen name="Terms" component={TermsScreen} />

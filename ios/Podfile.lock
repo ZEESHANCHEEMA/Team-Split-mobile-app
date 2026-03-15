@@ -73,6 +73,8 @@ PODS:
     - React-Core
     - React-runtimescheduler
     - ReactCommon
+  - ExpoPrint (55.0.8):
+    - ExpoModulesCore
   - ExpoSharing (55.0.11):
     - ExpoModulesCore
   - ExpoSQLite (55.0.10):
@@ -2012,6 +2014,7 @@ DEPENDENCIES:
   - "ExpoLogBox (from `../node_modules/@expo/log-box`)"
   - ExpoModulesCore (from `../node_modules/expo-modules-core`)
   - ExpoModulesJSI (from `../node_modules/expo-modules-core`)
+  - ExpoPrint (from `../node_modules/expo-print/ios`)
   - ExpoSharing (from `../node_modules/expo-sharing/ios`)
   - ExpoSQLite (from `../node_modules/expo-sqlite/ios`)
   - FBLazyVector (from `../node_modules/react-native/Libraries/FBLazyVector`)
@@ -2119,6 +2122,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-modules-core"
   ExpoModulesJSI:
     :path: "../node_modules/expo-modules-core"
+  ExpoPrint:
+    :path: "../node_modules/expo-print/ios"
   ExpoSharing:
     :path: "../node_modules/expo-sharing/ios"
   ExpoSQLite:
@@ -2291,6 +2296,7 @@ SPEC CHECKSUMS:
   ExpoLogBox: 89b634d5a8a64c4a6a7caad8f9985a28463c7002
   ExpoModulesCore: b40499585cec5bfd14d45ce04f0c42d3d2ec22bb
   ExpoModulesJSI: 46dab6c6d9e181bf94757367a0d569bfc7fffd99
+  ExpoPrint: 721e992dbfc6f2d5b9f52f75dd8e614801d035d6
   ExpoSharing: 5f1435af23bcf740c63b1d322400d1e26bf77393
   ExpoSQLite: 77506d3d056c57118280d1e2a2d76cc06e4926b3
   FBLazyVector: 32e9ed0301d0fcbc1b2b341dd7fcbf291f51eb83

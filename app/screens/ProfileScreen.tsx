@@ -18,24 +18,18 @@ import { getUserProfile, updateUserProfile } from '../services/firestore';
 import type { UserProfile } from '../types/firestore';
 import { updateProfile, updateEmail } from 'firebase/auth';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import type { CompositeNavigationProp, RouteProp } from '@react-navigation/native';
-import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { RootStackParamList, MainTabParamList } from '../navigation/AppNavigator';
+import type { RootStackParamList } from '../navigation/AppNavigator';
 import { useAppDispatch } from '../store/hooks';
 import { updateProfileDisplay } from '../store/slices/authSlice';
 import { setCurrency } from '../store/slices/settingsSlice';
 import { useCurrencyCode } from '../theme/useCurrency';
 import { showToast } from '../utils/toast';
 
-type ProfileNav = CompositeNavigationProp<
-  BottomTabNavigationProp<MainTabParamList, 'Profile'>,
-  NativeStackNavigationProp<RootStackParamList>
->;
-
 const ProfileScreen: React.FC = () => {
-  const navigation = useNavigation<ProfileNav>();
-  const route = useRoute<RouteProp<MainTabParamList, 'Profile'>>();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'Profile'>>();
+  const route = useRoute<RouteProp<RootStackParamList, 'Profile'>>();
   const dispatch = useAppDispatch();
   const { colors, radius } = useTheme();
   const currencyCode = useCurrencyCode();
@@ -186,8 +180,11 @@ const ProfileScreen: React.FC = () => {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-      {/* Header */}
+      {/* Header: back + title */}
       <View style={styles.headerRow}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <Ionicons name="chevron-back" size={24} color={colors.text} />
+        </TouchableOpacity>
         <Text style={styles.screenTitle}>{editing ? 'Edit Profile' : 'Profile'}</Text>
       </View>
 
@@ -319,11 +316,13 @@ function makeStyles(colors: Colors, radius: { xl: number; lg: number }) {
     },
     backButton: {
       padding: 4,
+      marginRight: 4,
     },
     screenTitle: {
       fontSize: 22,
       fontWeight: '700',
       color: colors.text,
+      flex: 1,
     },
     centered: {
       justifyContent: 'center',

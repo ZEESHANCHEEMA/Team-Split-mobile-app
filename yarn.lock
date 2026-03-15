@@ -2793,6 +2793,11 @@ expo-modules-core@55.0.15:
   dependencies:
     invariant "^2.2.4"
 
+expo-print@~55.0.8:
+  version "55.0.8"
+  resolved "https://registry.yarnpkg.com/expo-print/-/expo-print-55.0.8.tgz#ac1a757ad89940f8265b5ca0969ebbe27d2d6aec"
+  integrity sha512-XuZ6B4mATeAlf5D64+jE8WWnbDYlpr4PbUrKcEfC0AtvhJ1Bd957f6WxzcpmV82R04hQee/0q+lP+BN2DHiXMw==
+
 expo-server@^55.0.6:
   version "55.0.6"
   resolved "https://registry.npmjs.org/expo-server/-/expo-server-55.0.6.tgz"
