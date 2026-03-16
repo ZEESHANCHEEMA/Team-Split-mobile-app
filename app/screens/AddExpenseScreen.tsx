@@ -29,6 +29,7 @@ import { showToast } from '../utils/toast';
 import { useCurrency } from '../theme/useCurrency';
 import { useTheme } from '../theme/useTheme';
 import type { Colors } from '../theme/colors';
+import { EXPENSE_CATEGORIES } from '../constants/categories';
 
 interface MemberOption {
   id: string;
@@ -53,6 +54,7 @@ const AddExpenseScreen: React.FC<Props> = ({ navigation, route }) => {
   const [newMemberName, setNewMemberName] = useState('');
   const [addingMember, setAddingMember] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [category, setCategory] = useState<string>('general');
   const isEditing = !!expenseId;
 
   const handleRemoveGuestMember = async (memberId: string) => {
@@ -128,6 +130,7 @@ const AddExpenseScreen: React.FC<Props> = ({ navigation, route }) => {
               if (existing && isActive) {
                 setTitle(existing.title);
                 setAmount(existing.amount.toString());
+                setCategory(existing.category || 'general');
                 const validSplit = existing.splitBetween.filter((id) =>
                   allOptions.some((m) => m.id === id)
                 );
@@ -189,10 +192,10 @@ const AddExpenseScreen: React.FC<Props> = ({ navigation, route }) => {
     setError(null);
     try {
       if (expenseId) {
-        await updateExpense(teamId, expenseId, trimmedTitle, numAmount, payerId, splitBetween);
+        await updateExpense(teamId, expenseId, trimmedTitle, numAmount, payerId, splitBetween, category);
         showToast('Expense updated');
       } else {
-        await addExpense(teamId, trimmedTitle, numAmount, payerId, splitBetween);
+        await addExpense(teamId, trimmedTitle, numAmount, payerId, splitBetween, undefined, category);
         showToast('Expense added');
       }
       setTitle('');
@@ -272,6 +275,37 @@ const AddExpenseScreen: React.FC<Props> = ({ navigation, route }) => {
           keyboardType="decimal-pad"
           editable={!loading}
         />
+
+        <Text style={styles.label}>Category</Text>
+        <View style={styles.categoryRow}>
+          {EXPENSE_CATEGORIES.map((cat) => {
+            const isSelected = category === cat.value;
+            return (
+              <TouchableOpacity
+                key={cat.value}
+                style={[
+                  styles.categoryChip,
+                  isSelected && styles.categoryChipSelected,
+                  { borderColor: isSelected ? colors.primary : colors.border },
+                ]}
+                onPress={() => setCategory(cat.value)}
+                disabled={loading}
+              >
+                <Text style={styles.categoryChipEmoji}>{cat.emoji}</Text>
+                <Text
+                  style={[
+                    styles.categoryChipLabel,
+                    { color: colors.text },
+                    isSelected && styles.categoryChipLabelSelected,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {cat.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <View style={styles.addMemberRow}>
@@ -533,6 +567,36 @@ function makeStyles(colors: Colors, radius: { lg: number }) {
   error: {
     color: colors.danger,
     marginBottom: 12,
+  },
+  categoryRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  categoryChip: {
+    minWidth: 72,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  categoryChipSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  categoryChipEmoji: {
+    fontSize: 18,
+    marginBottom: 2,
+  },
+  categoryChipLabel: {
+    fontSize: 10,
+    fontWeight: '500',
+  },
+  categoryChipLabelSelected: {
+    color: colors.primaryTextOnPrimary,
+    fontWeight: '600',
   },
   paidByContainer: {
     marginBottom: 20,

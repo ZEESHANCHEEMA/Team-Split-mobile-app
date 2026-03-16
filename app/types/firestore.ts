@@ -33,6 +33,8 @@ export interface Expense {
   paidBy: string;
   splitBetween: string[];
   createdAt: { seconds: number; nanoseconds: number };
+  /** Category key e.g. food, transport */
+  category?: string;
 }
 
 export interface TeamSummary {
@@ -76,6 +78,7 @@ export interface FriendBill {
   paidBy: string; // 'me' | friendId
   splits: FriendBillSplit[];
   createdAt: { seconds: number; nanoseconds: number };
+  category?: string;
 }
 
 /** Friend (contact) for 1:1 expense splitting */
@@ -86,4 +89,35 @@ export interface Friend {
   email?: string;
   bills: FriendBill[];
   createdAt?: { seconds: number; nanoseconds: number };
+}
+
+/** Recurring expense template (e.g. rent monthly) – create actual expense from this */
+export interface RecurringExpense {
+  id: string;
+  teamId: string;
+  title: string;
+  amount: number;
+  currency: string;
+  paidBy: string;
+  splitBetween: string[];
+  frequency: 'weekly' | 'monthly';
+  interval: number;
+  createdAt: { seconds: number; nanoseconds: number };
+  lastCreatedAt?: { seconds: number; nanoseconds: number };
+}
+
+/** Reminder to ask someone to pay */
+export interface Reminder {
+  id: string;
+  targetType: 'friend' | 'member';
+  targetId: string;
+  targetName: string;
+  amount: number;
+  description?: string;
+  expenseId?: string;
+  teamId?: string;
+  friendId?: string;
+  status: 'pending' | 'dismissed';
+  createdAt: { seconds: number; nanoseconds: number };
+  remindAt?: { seconds: number; nanoseconds: number };
 }

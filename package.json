@@ -29,6 +29,7 @@
     "react-native": "0.83.2",
     "react-native-country-codes-picker": "^2.3.5",
     "react-native-dropdown-select-list": "^2.0.5",
+    "react-native-keyboard-aware-scroll-view": "^0.9.5",
     "react-native-safe-area-context": "^5.7.0",
     "react-native-screens": "^4.24.0",
     "react-native-toast-message": "^2.3.3",

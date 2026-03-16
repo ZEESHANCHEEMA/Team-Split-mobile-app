@@ -12,6 +12,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
@@ -26,10 +27,16 @@ import {
   deleteTeam,
   updateTeamName,
   removeMemberFromTeam,
+  getRecurringForTeam,
+  addRecurringExpense,
+  createExpenseFromRecurring,
+  deleteRecurringExpense,
+  deleteExpense,
 } from '../services/firestore';
 import { useCurrency } from '../theme/useCurrency';
 import { useTheme } from '../theme/useTheme';
-import type { Team, Expense, MemberBalanceSummary } from '../types/firestore';
+import type { Team, Expense, MemberBalanceSummary, RecurringExpense } from '../types/firestore';
+import { showToast } from '../utils/toast';
 import type { Colors } from '../theme/colors';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TeamDetail'>;
@@ -48,25 +55,37 @@ const TeamDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   const [actionLoading, setActionLoading] = useState(false);
   const [editNameVisible, setEditNameVisible] = useState(false);
   const [editNameValue, setEditNameValue] = useState('');
+  const [recurring, setRecurring] = useState<RecurringExpense[]>([]);
+  const [recurringModalVisible, setRecurringModalVisible] = useState(false);
+  const [recurringTitle, setRecurringTitle] = useState('');
+  const [recurringAmount, setRecurringAmount] = useState('');
+  const [recurringPaidBy, setRecurringPaidBy] = useState<string | null>(null);
+  const [recurringSplitBetween, setRecurringSplitBetween] = useState<string[]>([]);
+  const [recurringFrequency, setRecurringFrequency] = useState<'weekly' | 'monthly'>('monthly');
+  const [recurringSaving, setRecurringSaving] = useState(false);
+  const [recurringAddingId, setRecurringAddingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const uid = auth.currentUser?.uid;
     if (!uid) return;
     try {
-      const [t, ex, members] = await Promise.all([
+      const [t, ex, members, recList] = await Promise.all([
         getTeam(teamId),
         getExpensesForTeam(teamId),
         getMemberBalancesForTeam(teamId, uid),
+        getRecurringForTeam(teamId),
       ]);
       setTeam(t || null);
       setExpenses(ex);
       setMemberBalances(members);
       setBalance(t ? computeBalanceForUserInTeam(ex, uid) : 0);
+      setRecurring(recList);
     } catch {
       setTeam(null);
       setExpenses([]);
       setMemberBalances([]);
       setBalance(0);
+      setRecurring([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -174,6 +193,109 @@ const TeamDetailScreen: React.FC<Props> = ({ navigation, route }) => {
     }
   }, [teamId, editNameValue, load]);
 
+  const openRecurringModal = useCallback(() => {
+    const allIds = memberBalances.map((m) => m.id);
+    setRecurringTitle('');
+    setRecurringAmount('');
+    setRecurringPaidBy(uid ?? null);
+    setRecurringSplitBetween(allIds.length ? allIds : uid ? [uid] : []);
+    setRecurringFrequency('monthly');
+    setRecurringModalVisible(true);
+  }, [memberBalances, uid]);
+
+  const handleSaveRecurring = useCallback(async () => {
+    const title = recurringTitle.trim();
+    const num = parseFloat(recurringAmount.replace(/,/g, '.'));
+    if (!title || !Number.isFinite(num) || num <= 0) {
+      showToast('Enter title and valid amount', 'error');
+      return;
+    }
+    const paidBy = recurringPaidBy ?? uid;
+    const splitBetween = recurringSplitBetween.length ? recurringSplitBetween : (uid ? [uid] : []);
+    if (!paidBy || splitBetween.length === 0) {
+      showToast('Select who paid and who to split with', 'error');
+      return;
+    }
+    setRecurringSaving(true);
+    try {
+      await addRecurringExpense(teamId, title, num, paidBy, splitBetween, recurringFrequency, 1);
+      setRecurringModalVisible(false);
+      showToast('Recurring expense added');
+      load();
+    } catch (e) {
+      showToast((e as Error).message ?? 'Could not add recurring', 'error');
+    } finally {
+      setRecurringSaving(false);
+    }
+  }, [teamId, recurringTitle, recurringAmount, recurringPaidBy, recurringSplitBetween, recurringFrequency, uid, load]);
+
+  const handleCreateFromRecurring = useCallback(
+    async (recId: string) => {
+      setRecurringAddingId(recId);
+      try {
+        await createExpenseFromRecurring(teamId, recId);
+        showToast('Expense added');
+        load();
+      } catch (e) {
+        showToast((e as Error).message ?? 'Could not add expense', 'error');
+      } finally {
+        setRecurringAddingId(null);
+      }
+    },
+    [teamId, load]
+  );
+
+  const handleDeleteRecurring = useCallback(
+    (rec: RecurringExpense) => {
+      Alert.alert('Delete recurring?', `Remove "${rec.title}" from recurring?`, [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteRecurringExpense(teamId, rec.id);
+              showToast('Removed');
+              load();
+            } catch {
+              showToast('Could not remove', 'error');
+            }
+          },
+        },
+      ]);
+    },
+    [teamId, load]
+  );
+
+  const handleDeleteExpense = useCallback(
+    (expense: Expense) => {
+      Alert.alert(
+        'Delete bill?',
+        `Remove "${expense.title}" (${CURRENCY} ${expense.amount.toFixed(2)})?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              setActionLoading(true);
+              try {
+                await deleteExpense(teamId, expense.id);
+                showToast('Bill removed');
+                load();
+              } catch {
+                showToast('Could not remove bill', 'error');
+              } finally {
+                setActionLoading(false);
+              }
+            },
+          },
+        ]
+      );
+    },
+    [teamId, load, CURRENCY]
+  );
+
   if (loading && !team) {
     return (
       <View style={[styles.container, styles.centered]}>
@@ -248,6 +370,74 @@ const TeamDetailScreen: React.FC<Props> = ({ navigation, route }) => {
         </KeyboardAvoidingView>
       </Modal>
 
+      <Modal visible={recurringModalVisible} transparent animationType="fade">
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setRecurringModalVisible(false)} />
+          <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent} keyboardShouldPersistTaps="handled">
+            <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Add recurring expense</Text>
+              <Text style={styles.modalLabel}>Title (e.g. Rent, Internet)</Text>
+              <TextInput
+                style={[styles.modalInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                placeholder="Title"
+                placeholderTextColor={colors.mutedText}
+                value={recurringTitle}
+                onChangeText={setRecurringTitle}
+              />
+              <Text style={styles.modalLabel}>Amount</Text>
+              <TextInput
+                style={[styles.modalInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                placeholder="0"
+                placeholderTextColor={colors.mutedText}
+                value={recurringAmount}
+                onChangeText={setRecurringAmount}
+                keyboardType="decimal-pad"
+              />
+              <Text style={styles.modalLabel}>Repeat</Text>
+              <View style={styles.frequencyRow}>
+                <TouchableOpacity
+                  style={[styles.frequencyChip, recurringFrequency === 'weekly' && styles.frequencyChipActive, { borderColor: colors.border }]}
+                  onPress={() => setRecurringFrequency('weekly')}
+                >
+                  <Text style={[styles.frequencyChipText, recurringFrequency === 'weekly' && styles.frequencyChipTextActive, { color: colors.text }]}>Weekly</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.frequencyChip, recurringFrequency === 'monthly' && styles.frequencyChipActive, { borderColor: colors.border }]}
+                  onPress={() => setRecurringFrequency('monthly')}
+                >
+                  <Text style={[styles.frequencyChipText, recurringFrequency === 'monthly' && styles.frequencyChipTextActive, { color: colors.text }]}>Monthly</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.modalLabel}>Paid by</Text>
+              <View style={styles.paidByRow}>
+                {memberBalances.map((m) => (
+                  <TouchableOpacity
+                    key={m.id}
+                    style={[styles.paidByChip, recurringPaidBy === m.id && styles.paidByChipActive, { borderColor: colors.border }]}
+                    onPress={() => setRecurringPaidBy(m.id)}
+                  >
+                    <Text style={[styles.paidByChipText, recurringPaidBy === m.id && styles.paidByChipTextActive, { color: colors.text }]} numberOfLines={1}>{m.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={styles.modalLabelHint}>Split between all members by default</Text>
+              <View style={styles.modalButtons}>
+                <TouchableOpacity style={[styles.modalButtonCancel, { borderColor: colors.border }]} onPress={() => setRecurringModalVisible(false)}>
+                  <Text style={[styles.modalButtonCancelText, { color: colors.text }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButtonSave, { backgroundColor: colors.primary }]}
+                  onPress={handleSaveRecurring}
+                  disabled={recurringSaving || !recurringTitle.trim() || !recurringAmount.trim()}
+                >
+                  {recurringSaving ? <ActivityIndicator size="small" color={colors.primaryTextOnPrimary} /> : <Text style={styles.modalButtonSaveText}>Add recurring</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+
       {/* Members strip – reference: horizontal scroll, avatar, name, +$X/-$X/Settled */}
       {memberBalances.length > 0 && (
         <View style={styles.membersSection}>
@@ -298,6 +488,48 @@ const TeamDetailScreen: React.FC<Props> = ({ navigation, route }) => {
         <Text style={styles.addBillButtonText}>Add Bill</Text>
       </TouchableOpacity>
 
+      {/* Recurring expenses */}
+      <View style={styles.recurringSection}>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>Recurring</Text>
+          <TouchableOpacity onPress={openRecurringModal}>
+            <Text style={styles.addRecurringLink}>+ Add</Text>
+          </TouchableOpacity>
+        </View>
+        {recurring.length === 0 ? (
+          <Text style={styles.recurringEmpty}>No recurring expenses. Add rent, subscriptions, etc.</Text>
+        ) : (
+          recurring.map((rec) => (
+            <View key={rec.id} style={[styles.recurringCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={styles.recurringCardLeft}>
+                <Text style={styles.recurringTitle}>{rec.title}</Text>
+                <Text style={styles.recurringMeta}>
+                  {CURRENCY} {rec.amount.toFixed(2)} · {rec.frequency}
+                </Text>
+              </View>
+              <View style={styles.recurringCardRight}>
+                <TouchableOpacity
+                  style={[styles.recurringAddBtn, { backgroundColor: colors.primary }]}
+                  onPress={() => handleCreateFromRecurring(rec.id)}
+                  disabled={!!recurringAddingId}
+                >
+                  {recurringAddingId === rec.id ? (
+                    <ActivityIndicator size="small" color={colors.primaryTextOnPrimary} />
+                  ) : (
+                    <Text style={styles.recurringAddBtnText}>Add this {rec.frequency === 'monthly' ? 'month' : 'week'}</Text>
+                  )}
+                </TouchableOpacity>
+                {isCreator && (
+                  <TouchableOpacity onPress={() => handleDeleteRecurring(rec)} style={styles.recurringDeleteBtn}>
+                    <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          ))
+        )}
+      </View>
+
       {/* Bills – reference: bg-card rounded-2xl border p-4, Paid by X · date, Settled pill */}
       <Text style={styles.sectionTitle}>Bills</Text>
       <FlatList
@@ -317,27 +549,35 @@ const TeamDetailScreen: React.FC<Props> = ({ navigation, route }) => {
         }
         ItemSeparatorComponent={() => <View style={styles.billSpacer} />}
         renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.billCard}
-            activeOpacity={0.7}
-            onPress={() => navigation.navigate('AddExpense', { teamId, expenseId: item.id })}
-          >
-            <View style={styles.billCardTop}>
-              <View>
-                <Text style={styles.billTitle}>{item.title}</Text>
-                <Text style={styles.billMeta}>
-                  Paid by {getPayerName(item.paidBy)} · {item.createdAt?.seconds ? new Date(item.createdAt.seconds * 1000).toLocaleDateString() : '—'}
-                </Text>
-              </View>
-              <View style={styles.billCardRight}>
-                <Text style={styles.billAmount}>{CURRENCY} {item.amount.toFixed(2)}</Text>
-                <View style={styles.settledPill}>
-                  <Ionicons name="checkmark" size={12} color={colors.success} />
-                  <Text style={styles.settledPillText}>Settled</Text>
+          <View style={styles.billCard}>
+            <TouchableOpacity
+              style={styles.billCardTouchable}
+              activeOpacity={0.7}
+              onPress={() => navigation.navigate('AddExpense', { teamId, expenseId: item.id })}
+            >
+              <View style={styles.billCardTop}>
+                <View>
+                  <Text style={styles.billTitle}>{item.title}</Text>
+                  <Text style={styles.billMeta}>
+                    Paid by {getPayerName(item.paidBy)} · {item.createdAt?.seconds ? new Date(item.createdAt.seconds * 1000).toLocaleDateString() : '—'}
+                  </Text>
+                </View>
+                <View style={styles.billCardRight}>
+                  <Text style={styles.billAmount}>{CURRENCY} {item.amount.toFixed(2)}</Text>
+                  <View style={styles.settledPill}>
+                    <Ionicons name="checkmark" size={12} color={colors.success} />
+                    <Text style={styles.settledPillText}>Settled</Text>
+                  </View>
                 </View>
               </View>
-            </View>
-          </TouchableOpacity>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.billDeleteBtn}
+              onPress={() => handleDeleteExpense(item)}
+            >
+              <Ionicons name="trash-outline" size={18} color={colors.danger} />
+            </TouchableOpacity>
+          </View>
         )}
       />
 
@@ -460,6 +700,132 @@ function makeStyles(colors: Colors, radius: { xl: number; lg: number }) {
     fontWeight: '600',
     color: colors.primaryTextOnPrimary,
   },
+  modalScroll: {
+    flex: 1,
+  },
+  modalScrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    padding: 24,
+  },
+  modalLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.mutedText,
+    marginBottom: 8,
+  },
+  modalLabelHint: {
+    fontSize: 12,
+    color: colors.mutedText,
+    marginBottom: 16,
+  },
+  frequencyRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 16,
+  },
+  frequencyChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  frequencyChipActive: {
+    backgroundColor: colors.primary + '25',
+    borderColor: colors.primary,
+  },
+  frequencyChipText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  frequencyChipTextActive: {
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  paidByRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+  paidByChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  paidByChipActive: {
+    backgroundColor: colors.primary + '25',
+    borderColor: colors.primary,
+  },
+  paidByChipText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  paidByChipTextActive: {
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  recurringSection: {
+    marginBottom: 24,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  addRecurringLink: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  recurringEmpty: {
+    fontSize: 13,
+    color: colors.mutedText,
+    marginBottom: 8,
+  },
+  recurringCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: radius.lg,
+    padding: 14,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  recurringCardLeft: {
+    flex: 1,
+    minWidth: 0,
+  },
+  recurringTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  recurringMeta: {
+    fontSize: 12,
+    color: colors.mutedText,
+    marginTop: 2,
+  },
+  recurringCardRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  recurringAddBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: radius.lg,
+  },
+  recurringAddBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.primaryTextOnPrimary,
+  },
+  recurringDeleteBtn: {
+    padding: 4,
+  },
   membersSection: {
     marginBottom: 24,
   },
@@ -536,12 +902,16 @@ function makeStyles(colors: Colors, radius: { xl: number; lg: number }) {
     height: 12,
   },
   billCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.card,
     borderRadius: radius.xl,
     borderWidth: 1,
     borderColor: colors.border,
     padding: 16,
   },
+  billCardTouchable: { flex: 1 },
+  billDeleteBtn: { padding: 8, marginLeft: 4 },
   billCardTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',

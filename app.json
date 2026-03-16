@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "team-split",
-    "slug": "team-split",
+    "name": "Team Split",
+    "slug": "TeamSplit",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

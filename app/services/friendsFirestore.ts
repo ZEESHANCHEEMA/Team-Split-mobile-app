@@ -27,6 +27,7 @@ function toFriendBill(data: Record<string, unknown>, id: string): FriendBill {
     paidBy: (data.paidBy as string) || 'me',
     splits: splitsRaw.map((s) => ({ memberId: s.memberId, amount: Number(s.amount) || 0, paid: !!s.paid })),
     createdAt: { seconds: t.seconds, nanoseconds: t.nanoseconds },
+    category: typeof data.category === 'string' ? data.category : undefined,
   };
 }
 
@@ -93,7 +94,8 @@ export async function addFriendBill(
   friendId: string,
   description: string,
   totalAmount: number,
-  paidByMe: boolean
+  paidByMe: boolean,
+  category?: string
 ): Promise<string> {
   const ref = friendBillsRef(uid, friendId);
   const half = Math.round((totalAmount / 2) * 100) / 100;
@@ -107,6 +109,7 @@ export async function addFriendBill(
     paidBy: paidByMe ? 'me' : friendId,
     splits,
     createdAt: serverTimestamp(),
+    category: category || 'general',
   });
   return docRef.id;
 }
@@ -126,6 +129,41 @@ export async function toggleFriendBillPaid(
     s.memberId === memberId ? { ...s, paid: !s.paid } : s
   );
   await updateDoc(ref, { splits: next });
+}
+
+export async function deleteFriendBill(
+  uid: string,
+  friendId: string,
+  billId: string
+): Promise<void> {
+  const ref = doc(db, USERS, uid, FRIENDS, friendId, BILLS, billId);
+  await deleteDoc(ref);
+}
+
+/** Mark all unpaid splits for this friend as paid (settle up) */
+export async function settleUpFriend(uid: string, friendId: string): Promise<void> {
+  const friend = await getFriend(uid, friendId);
+  if (!friend) return;
+  for (const bill of friend.bills) {
+    for (const split of bill.splits) {
+      if (!split.paid) {
+        await toggleFriendBillPaid(uid, friendId, bill.id, split.memberId);
+      }
+    }
+  }
+}
+
+export async function updateFriend(
+  uid: string,
+  friendId: string,
+  data: { name?: string; phone?: string; email?: string }
+): Promise<void> {
+  const ref = friendRef(uid, friendId);
+  await updateDoc(ref, {
+    ...(data.name !== undefined && { name: data.name.trim() }),
+    ...(data.phone !== undefined && { phone: data.phone?.trim() || null }),
+    ...(data.email !== undefined && { email: data.email?.trim() || null }),
+  });
 }
 
 export async function deleteFriend(uid: string, friendId: string): Promise<void> {

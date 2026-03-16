@@ -13,16 +13,20 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { auth } from '../services/firebaseConfig';
-import { getDashboardTeams, getMemberBalancesForUser } from '../services/firestore';
+import { getDashboardExtended, getReminders, dismissReminder } from '../services/firestore';
 import { getFriends, getFriendBalance } from '../services/friendsFirestore';
 import { useCurrency } from '../theme/useCurrency';
 import { useTheme } from '../theme/useTheme';
 import type { RootStackParamList, MainTabParamList } from '../navigation/AppNavigator';
 import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { Colors } from '../theme/colors';
-import type { Friend } from '../types/firestore';
+import type { Friend, Reminder } from '../types/firestore';
+import { shareContent } from '../utils/shareUtils';
 import { useAppSelector, useAppDispatch } from '../store/hooks';
 import { setDashboardData } from '../store/slices/cacheSlice';
+import OnboardingOverlay from '../components/OnboardingOverlay';
+import { getOnboardingComplete, setOnboardingComplete } from '../utils/onboardingStorage';
+import { EXPENSE_CATEGORIES } from '../constants/categories';
 
 type DashboardNavigation = CompositeNavigationProp<
   NativeStackNavigationProp<MainTabParamList, 'Dashboard'>,
@@ -39,26 +43,37 @@ const DashboardScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [friends, setFriends] = useState<Friend[]>([]);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [onboardingComplete, setOnboardingCompleteState] = useState<boolean | null>(null);
+  const [monthlySpendingTeam, setMonthlySpendingTeam] = useState(0);
+  const [categoryTotalsTeam, setCategoryTotalsTeam] = useState<Record<string, number>>({});
 
   const load = useCallback(async () => {
     const uid = auth.currentUser?.uid;
     if (!uid) {
       dispatch(setDashboardData({ teams: [], memberBalances: [] }));
       setFriends([]);
+      setReminders([]);
       setLoading(false);
       return;
     }
     try {
-      const [teamsData, memberData, friendsData] = await Promise.all([
-        getDashboardTeams(uid),
-        getMemberBalancesForUser(uid),
+      const [extended, friendsData, remindersData] = await Promise.all([
+        getDashboardExtended(uid),
         getFriends(uid),
+        getReminders(uid),
       ]);
-      dispatch(setDashboardData({ teams: teamsData, memberBalances: memberData }));
+      dispatch(setDashboardData({ teams: extended.teams, memberBalances: extended.memberBalances }));
       setFriends(friendsData);
+      setReminders(remindersData);
+      setMonthlySpendingTeam(extended.monthlySpending);
+      setCategoryTotalsTeam(extended.categoryTotals);
     } catch {
       dispatch(setDashboardData({ teams: [], memberBalances: [] }));
       setFriends([]);
+      setReminders([]);
+      setMonthlySpendingTeam(0);
+      setCategoryTotalsTeam({});
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -69,7 +84,43 @@ const DashboardScreen: React.FC = () => {
     useCallback(() => {
       setLoading(true);
       load();
+      getOnboardingComplete().then(setOnboardingCompleteState);
     }, [load])
+  );
+
+  const handleOnboardingComplete = useCallback(async () => {
+    await setOnboardingComplete();
+    setOnboardingCompleteState(true);
+  }, []);
+
+  const showOnboarding =
+    onboardingComplete === false &&
+    !loading &&
+    teams.length === 0 &&
+    friends.length === 0;
+
+  const handleSendReminder = useCallback(
+    (r: Reminder) => {
+      const msg = r.description
+        ? `Hi ${r.targetName}, a friendly reminder: ${CURRENCY} ${r.amount.toFixed(2)} – ${r.description}. (TeamSplit)`
+        : `Hi ${r.targetName}, a friendly reminder about ${CURRENCY} ${r.amount.toFixed(2)}. (TeamSplit)`;
+      shareContent(msg, 'Remind');
+    },
+    [CURRENCY]
+  );
+
+  const handleDismissReminder = useCallback(
+    async (reminderId: string) => {
+      const uid = auth.currentUser?.uid;
+      if (!uid) return;
+      try {
+        await dismissReminder(uid, reminderId);
+        setReminders((prev) => prev.filter((r) => r.id !== reminderId));
+      } catch {
+        // ignore
+      }
+    },
+    []
   );
 
   const onRefresh = useCallback(() => {
@@ -83,6 +134,39 @@ const DashboardScreen: React.FC = () => {
   }, 0);
   const friendsToReceive = Math.max(0, friendNet);
   const friendsToPay = Math.max(0, -friendNet);
+
+  const now = useMemo(() => new Date(), []);
+  const currentMonthStart = useMemo(() => new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000, [now]);
+  const currentMonthEnd = useMemo(() => new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).getTime() / 1000, [now]);
+  const { monthlyFromFriends, categoryFromFriends } = useMemo(() => {
+    let monthly = 0;
+    const byCat: Record<string, number> = {};
+    for (const f of friends) {
+      for (const bill of f.bills || []) {
+        const sec = bill.createdAt?.seconds ?? 0;
+        if (sec >= currentMonthStart && sec <= currentMonthEnd) {
+          monthly += bill.totalAmount;
+          const cat = bill.category || 'general';
+          byCat[cat] = (byCat[cat] || 0) + bill.totalAmount;
+        }
+      }
+    }
+    return { monthlyFromFriends: monthly, categoryFromFriends: byCat };
+  }, [friends, currentMonthStart, currentMonthEnd]);
+  const totalMonthlySpending = monthlySpendingTeam + monthlyFromFriends;
+  const mergedCategoryTotals = useMemo(() => {
+    const m: Record<string, number> = { ...categoryTotalsTeam };
+    for (const [cat, val] of Object.entries(categoryFromFriends)) {
+      m[cat] = (m[cat] || 0) + val;
+    }
+    return m;
+  }, [categoryTotalsTeam, categoryFromFriends]);
+  const topCategories = useMemo(() => {
+    return EXPENSE_CATEGORIES.map((c) => ({ ...c, total: mergedCategoryTotals[c.value] || 0 }))
+      .filter((c) => c.total > 0)
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5);
+  }, [mergedCategoryTotals]);
 
   const totalYouOwe = teams.reduce((sum, t) => sum + t.youOwe, 0) + friendsToPay;
   const totalOwedToYou = teams.reduce((sum, t) => sum + t.owedToYou, 0) + friendsToReceive;
@@ -117,12 +201,19 @@ const DashboardScreen: React.FC = () => {
   const displayTeams = teams.slice(0, 3);
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.scrollContent}
-      showsVerticalScrollIndicator={false}
-    >
-      <Text style={styles.greeting}>Welcome back 👋</Text>
+    <>
+      <OnboardingOverlay
+        visible={showOnboarding}
+        onCreateTeam={handleSeeAllTeams}
+        onAddFriend={() => navigation.navigate('Friends')}
+        onComplete={handleOnboardingComplete}
+      />
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={styles.greeting}>Welcome back 👋</Text>
       <Text style={styles.appTitle}>TeamSplit</Text>
 
       {/* Primary stat card – reference: bg-primary rounded-2xl p-5 */}
@@ -162,6 +253,31 @@ const DashboardScreen: React.FC = () => {
           </Text>
         </View>
       </View>
+
+      {/* Monthly spending */}
+      <View style={[styles.monthlyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={styles.monthlyCardRow}>
+          <Ionicons name="calendar-outline" size={20} color={colors.primary} />
+          <Text style={[styles.monthlyCardLabel, { color: colors.mutedText }]}>This month</Text>
+        </View>
+        <Text style={[styles.monthlyCardAmount, { color: colors.text }]}>
+          {CURRENCY} {totalMonthlySpending.toFixed(2)}
+        </Text>
+      </View>
+
+      {/* Category breakdown */}
+      {topCategories.length > 0 && (
+        <View style={[styles.categorySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.categorySectionTitle, { color: colors.text }]}>Spending by category</Text>
+          {topCategories.map((cat) => (
+            <View key={cat.value} style={styles.categoryRow}>
+              <Text style={styles.categoryEmoji}>{cat.emoji}</Text>
+              <Text style={[styles.categoryLabel, { color: colors.text }]} numberOfLines={1}>{cat.label}</Text>
+              <Text style={[styles.categoryAmount, { color: colors.text }]}>{CURRENCY} {cat.total.toFixed(2)}</Text>
+            </View>
+          ))}
+        </View>
+      )}
 
     
 {/* 
@@ -210,11 +326,11 @@ const DashboardScreen: React.FC = () => {
         }}
       /> */}
 
-      {memberBalances.length > 0 && (
+      {(memberBalances.length > 0 || friends.length > 0) && (
         <View style={styles.peopleSection}>
           <Text style={styles.peopleSectionTitle}>People summary</Text>
           {memberBalances.map((m) => (
-            <View key={m.teamId ? `${m.teamId}_${m.id}` : m.id} style={styles.personCard}>
+            <View key={m.teamId ? `team_${m.teamId}_${m.id}` : m.id} style={styles.personCard}>
               <View style={styles.personCardLeft}>
                 <Text style={styles.personName}>{m.name}</Text>
                 <Text style={styles.personSubtitle}>
@@ -233,9 +349,78 @@ const DashboardScreen: React.FC = () => {
               </Text>
             </View>
           ))}
+          {friends.map((f) => {
+            const bal = getFriendBalance(f);
+            const net = bal.theyOweMe - bal.iOweThem;
+            return (
+              <TouchableOpacity
+                key={`friend_${f.id}`}
+                style={styles.personCard}
+                onPress={() => navigation.navigate('FriendDetail', { friendId: f.id })}
+                activeOpacity={0.7}
+              >
+                <View style={styles.personCardLeft}>
+                  <Text style={styles.personName}>{f.name}</Text>
+                  <Text style={styles.personSubtitle}>
+                    {net > 0 ? 'To Receive' : net < 0 ? 'To Pay' : 'Settled up'} · Friend
+                  </Text>
+                </View>
+                <View style={styles.personCardRight}>
+                  <Text
+                    style={[
+                      styles.personAmount,
+                      net > 0 && styles.summaryPositive,
+                      net < 0 && styles.summaryNegative,
+                    ]}
+                  >
+                    {CURRENCY} {Math.abs(net).toFixed(2)}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.personEditBtn}
+                    onPress={() => navigation.navigate('FriendDetail', { friendId: f.id })}
+                  >
+                    <Ionicons name="pencil" size={16} color={colors.primary} />
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       )}
-    </ScrollView>
+
+      {reminders.length > 0 && (
+        <View style={styles.remindersSection}>
+          <Text style={styles.peopleSectionTitle}>Reminders</Text>
+          {reminders.map((r) => (
+            <View key={r.id} style={styles.reminderCard}>
+              <View style={styles.reminderCardLeft}>
+                <Text style={styles.reminderTitle}>Remind {r.targetName}</Text>
+                <Text style={styles.reminderSubtitle}>
+                  {CURRENCY} {r.amount.toFixed(2)}
+                  {r.description ? ` · ${r.description}` : ''}
+                </Text>
+              </View>
+              <View style={styles.reminderActions}>
+                <TouchableOpacity
+                  style={[styles.reminderSendBtn, { backgroundColor: colors.primary }]}
+                  onPress={() => handleSendReminder(r)}
+                >
+                  <Ionicons name="share-outline" size={16} color={colors.primaryTextOnPrimary} />
+                  <Text style={styles.reminderSendBtnText}>Send</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.reminderDismissBtn}
+                  onPress={() => handleDismissReminder(r.id)}
+                >
+                  <Ionicons name="close" size={18} color={colors.mutedText} />
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+      </ScrollView>
+    </>
   );
 };
 
@@ -345,6 +530,26 @@ function makeStyles(colors: Colors, radius: { xl: number; lg: number }) {
   smallCardAmountWarning: {
     color: '#FEF3C7',
   },
+  monthlyCard: {
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: 16,
+  },
+  monthlyCardRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+  monthlyCardLabel: { fontSize: 14 },
+  monthlyCardAmount: { fontSize: 22, fontWeight: '700' },
+  categorySection: {
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: 16,
+  },
+  categorySectionTitle: { fontSize: 16, fontWeight: '600', marginBottom: 12 },
+  categoryRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  categoryEmoji: { fontSize: 18 },
+  categoryLabel: { flex: 1, fontSize: 14 },
+  categoryAmount: { fontSize: 14, fontWeight: '600' },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -418,7 +623,56 @@ function makeStyles(colors: Colors, radius: { xl: number; lg: number }) {
   },
   peopleSection: {
     marginTop: 4,
+    marginBottom: 24,
+  },
+  remindersSection: {
     marginBottom: 126,
+  },
+  reminderCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: 8,
+  },
+  reminderCardLeft: {
+    flex: 1,
+    minWidth: 0,
+  },
+  reminderTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  reminderSubtitle: {
+    fontSize: 12,
+    color: colors.mutedText,
+    marginTop: 2,
+  },
+  reminderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  reminderSendBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.lg,
+  },
+  reminderSendBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.primaryTextOnPrimary,
+  },
+  reminderDismissBtn: {
+    padding: 4,
   },
   peopleSectionTitle: {
     fontSize: 18,
@@ -441,6 +695,12 @@ function makeStyles(colors: Colors, radius: { xl: number; lg: number }) {
     flex: 1,
     minWidth: 0,
   },
+  personCardRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  personEditBtn: { padding: 4 },
   personName: {
     fontSize: 15,
     fontWeight: '600',

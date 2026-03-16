@@ -25,7 +25,11 @@ import {
   toggleFriendBillPaid,
   getFriendBalance,
   deleteFriend,
+  deleteFriendBill,
+  settleUpFriend,
 } from '../services/friendsFirestore';
+import { EXPENSE_CATEGORIES } from '../constants/categories';
+import { addReminder } from '../services/firestore';
 import type { Friend, FriendBill } from '../types/firestore';
 import { useCurrency } from '../theme/useCurrency';
 import { shareContent } from '../utils/shareUtils';
@@ -46,7 +50,10 @@ const FriendDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   const [desc, setDesc] = useState('');
   const [amount, setAmount] = useState('');
   const [iPaid, setIPaid] = useState(true);
+  const [billCategory, setBillCategory] = useState<string>('general');
   const [actionLoading, setActionLoading] = useState(false);
+  const [settleUpLoading, setSettleUpLoading] = useState(false);
+  const [removeFriendLoading, setRemoveFriendLoading] = useState(false);
 
   const load = useCallback(async () => {
     const uid = auth.currentUser?.uid;
@@ -82,9 +89,10 @@ const FriendDetailScreen: React.FC<Props> = ({ navigation, route }) => {
     if (!uid || !friend) return;
     setActionLoading(true);
     try {
-      await addFriendBill(uid, friendId, desc.trim(), num, iPaid);
+      await addFriendBill(uid, friendId, desc.trim(), num, iPaid, billCategory);
       setDesc('');
       setAmount('');
+      setBillCategory('general');
       setBillModalVisible(false);
       showToast('Bill added');
       load();
@@ -122,6 +130,68 @@ const FriendDetailScreen: React.FC<Props> = ({ navigation, route }) => {
     shareContent(text, `Bills with ${friend.name}`);
   };
 
+  const handleSettleUp = async () => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    setSettleUpLoading(true);
+    try {
+      await settleUpFriend(uid, friendId);
+      showToast('All settled up!');
+      load();
+    } catch {
+      showToast('Could not settle up', 'error');
+    } finally {
+      setSettleUpLoading(false);
+    }
+  };
+
+  const handleDeleteBill = (bill: FriendBill) => {
+    Alert.alert(
+      'Delete bill?',
+      `Remove "${bill.description}" (${CURRENCY} ${bill.totalAmount.toFixed(2)})?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const uid = auth.currentUser?.uid;
+            if (!uid) return;
+            try {
+              await deleteFriendBill(uid, friendId, bill.id);
+              showToast('Bill removed');
+              load();
+            } catch {
+              showToast('Could not remove bill', 'error');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleRemind = async () => {
+    const uid = auth.currentUser?.uid;
+    if (!uid || !friend) return;
+    const bal = getFriendBalance(friend);
+    const net = bal.theyOweMe - bal.iOweThem;
+    if (net <= 0) return;
+    try {
+      await addReminder(uid, {
+        targetType: 'friend',
+        targetId: friend.id,
+        targetName: friend.name,
+        amount: net,
+        description: 'Balance',
+        friendId: friend.id,
+      });
+      shareContent(getFriendSummaryText(friend, CURRENCY), `Remind ${friend.name}`);
+      showToast('Reminder added');
+    } catch {
+      showToast('Could not add reminder', 'error');
+    }
+  };
+
   const handleRemoveFriend = () => {
     const uid = auth.currentUser?.uid;
     if (!uid || !friend) return;
@@ -134,7 +204,7 @@ const FriendDetailScreen: React.FC<Props> = ({ navigation, route }) => {
           text: 'Remove',
           style: 'destructive',
           onPress: async () => {
-            setActionLoading(true);
+            setRemoveFriendLoading(true);
             try {
               await deleteFriend(uid, friendId);
               showToast('Friend removed');
@@ -142,7 +212,7 @@ const FriendDetailScreen: React.FC<Props> = ({ navigation, route }) => {
             } catch {
               showToast('Could not remove friend', 'error');
             } finally {
-              setActionLoading(false);
+              setRemoveFriendLoading(false);
             }
           },
         },
@@ -210,6 +280,34 @@ const FriendDetailScreen: React.FC<Props> = ({ navigation, route }) => {
           </View>
         </AnimatedFadeInUp>
 
+        {net > 0 && (
+          <AnimatedFadeInUp delay={90} duration={360}>
+            <TouchableOpacity style={styles.remindButton} onPress={handleRemind}>
+              <Ionicons name="notifications-outline" size={20} color={colors.primaryTextOnPrimary} />
+              <Text style={styles.remindButtonText}>Remind to pay</Text>
+            </TouchableOpacity>
+          </AnimatedFadeInUp>
+        )}
+
+        {net !== 0 && (
+          <AnimatedFadeInUp delay={95} duration={360}>
+            <TouchableOpacity
+              style={[styles.settleUpButton, { backgroundColor: colors.success }]}
+              onPress={handleSettleUp}
+              disabled={settleUpLoading}
+            >
+              {settleUpLoading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-done" size={20} color="#fff" />
+                  <Text style={styles.settleUpButtonText}>Settle up</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </AnimatedFadeInUp>
+        )}
+
         <AnimatedFadeInUp delay={120} duration={360}>
           <TouchableOpacity style={styles.addBillButton} onPress={() => setBillModalVisible(true)}>
             <Ionicons name="add" size={22} color={colors.primaryTextOnPrimary} />
@@ -217,14 +315,14 @@ const FriendDetailScreen: React.FC<Props> = ({ navigation, route }) => {
           </TouchableOpacity>
         </AnimatedFadeInUp>
 
-        <TouchableOpacity
-          style={styles.removeFriendButton}
-          onPress={handleRemoveFriend}
-          disabled={actionLoading}
-        >
-          {actionLoading ? (
-            <ActivityIndicator size="small" color={colors.danger} />
-          ) : (
+          <TouchableOpacity
+            style={styles.removeFriendButton}
+            onPress={handleRemoveFriend}
+            disabled={removeFriendLoading}
+          >
+            {removeFriendLoading ? (
+              <ActivityIndicator size="small" color={colors.danger} />
+            ) : (
             <>
               <Ionicons name="person-remove-outline" size={18} color={colors.danger} />
               <Text style={styles.removeFriendButtonText}>Remove friend</Text>
@@ -239,11 +337,12 @@ const FriendDetailScreen: React.FC<Props> = ({ navigation, route }) => {
           ) : (
             sortedBills.map((bill) => {
               const allPaid = bill.splits.every((s) => s.paid);
+              const catInfo = EXPENSE_CATEGORIES.find((c) => c.value === (bill.category || 'general'));
               return (
                 <View key={bill.id} style={styles.billCard}>
                   <View style={styles.billRow}>
                     <View style={styles.billLeft}>
-                      <Text style={styles.billDesc}>{bill.description}</Text>
+                      <Text style={styles.billDesc}>{catInfo?.emoji ? `${catInfo.emoji} ` : ''}{bill.description}</Text>
                       <Text style={styles.billMeta}>
                         {bill.paidBy === 'me' ? 'You' : friend.name} paid · {bill.createdAt?.seconds ? new Date(bill.createdAt.seconds * 1000).toLocaleDateString() : '—'}
                       </Text>
@@ -256,6 +355,9 @@ const FriendDetailScreen: React.FC<Props> = ({ navigation, route }) => {
                           {allPaid ? 'Settled' : 'Pending'}
                         </Text>
                       </View>
+                      <TouchableOpacity style={styles.billDeleteBtn} onPress={() => handleDeleteBill(bill)}>
+                        <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                      </TouchableOpacity>
                     </View>
                   </View>
                   {bill.splits.map((split) => (
@@ -300,6 +402,22 @@ const FriendDetailScreen: React.FC<Props> = ({ navigation, route }) => {
               onChangeText={(t) => setAmount(t.replace(/[^0-9.]/g, ''))}
               keyboardType="decimal-pad"
             />
+            <Text style={[styles.modalLabel, { color: colors.mutedText }]}>Category</Text>
+            <View style={styles.categoryChipRow}>
+              {EXPENSE_CATEGORIES.map((cat) => {
+                const isSelected = billCategory === cat.value;
+                return (
+                  <TouchableOpacity
+                    key={cat.value}
+                    style={[styles.categoryChip, isSelected && styles.categoryChipSelected, { borderColor: isSelected ? colors.primary : colors.border }]}
+                    onPress={() => setBillCategory(cat.value)}
+                  >
+                    <Text style={styles.categoryChipEmoji}>{cat.emoji}</Text>
+                    <Text style={[styles.categoryChipLabel, { color: colors.text }, isSelected && styles.categoryChipLabelSelected]} numberOfLines={1}>{cat.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
             <Text style={[styles.whoPaidLabel, { color: colors.mutedText }]}>Who paid?</Text>
             <View style={styles.whoPaidRow}>
               <TouchableOpacity
@@ -350,6 +468,27 @@ function makeStyles(colors: Colors, radius: { xl: number; lg: number }) {
     balanceAmount: { fontSize: 28, fontWeight: '700', color: colors.text, marginTop: 4 },
     amountPositive: { color: colors.success },
     amountNegative: { color: colors.primary },
+    remindButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      height: 44,
+      borderRadius: radius.lg,
+      backgroundColor: colors.primary,
+      marginBottom: 12,
+    },
+    remindButtonText: { fontSize: 15, fontWeight: '600', color: colors.primaryTextOnPrimary },
+    settleUpButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      height: 44,
+      borderRadius: radius.lg,
+      marginBottom: 12,
+    },
+    settleUpButtonText: { fontSize: 16, fontWeight: '600', color: '#fff' },
     addBillButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 48, borderRadius: radius.lg, backgroundColor: colors.primary, marginBottom: 24 },
     addBillButtonText: { fontSize: 16, fontWeight: '600', color: colors.primaryTextOnPrimary },
     removeFriendButton: {
@@ -374,6 +513,7 @@ function makeStyles(colors: Colors, radius: { xl: number; lg: number }) {
     billMeta: { fontSize: 12, color: colors.mutedText, marginTop: 4 },
     billRight: { alignItems: 'flex-end' },
     billTotal: { fontSize: 16, fontWeight: '700', color: colors.text },
+    billDeleteBtn: { marginTop: 6, padding: 4 },
     statusPill: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, alignSelf: 'flex-end' },
     statusSettled: { backgroundColor: 'rgba(34, 197, 94, 0.15)' },
     statusPending: { backgroundColor: 'rgba(245, 158, 11, 0.15)' },
@@ -395,6 +535,13 @@ function makeStyles(colors: Colors, radius: { xl: number; lg: number }) {
     modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: 20 },
     input: { height: 48, borderRadius: radius.lg, paddingHorizontal: 16, marginBottom: 16, borderWidth: 1 },
     amountInput: { fontSize: 18, fontWeight: '700' },
+    modalLabel: { fontSize: 14, fontWeight: '500', marginBottom: 8 },
+    categoryChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+    categoryChip: { minWidth: 64, paddingHorizontal: 8, paddingVertical: 6, borderRadius: radius.lg, borderWidth: 1, alignItems: 'center' },
+    categoryChipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
+    categoryChipEmoji: { fontSize: 16, marginBottom: 2 },
+    categoryChipLabel: { fontSize: 10, fontWeight: '500' },
+    categoryChipLabelSelected: { color: colors.primaryTextOnPrimary, fontWeight: '600' },
     whoPaidLabel: { fontSize: 14, fontWeight: '500', marginBottom: 8 },
     whoPaidRow: { flexDirection: 'row', gap: 12, marginBottom: 20 },
     whoPaidButton: { flex: 1, height: 44, borderRadius: radius.lg, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border },

@@ -23,11 +23,15 @@ import type {
   GuestMember,
   MemberBalanceSummary,
   ActivityExpense,
+  RecurringExpense,
+  Reminder,
 } from '../types/firestore';
 
 const USERS = 'users';
 const TEAMS = 'teams';
 const EXPENSES = 'expenses';
+const RECURRING = 'recurring';
+const REMINDERS = 'reminders';
 const CURRENCY = 'Rs';
 
 function toUserProfile(data: Record<string, unknown>, id: string): UserProfile {
@@ -71,6 +75,7 @@ function toExpense(data: Record<string, unknown>, id: string): Expense {
     paidBy: (data.paidBy as string) || '',
     splitBetween: (data.splitBetween as string[]) || [],
     createdAt: { seconds: t.seconds, nanoseconds: t.nanoseconds },
+    category: typeof data.category === 'string' ? data.category : undefined,
   };
 }
 
@@ -219,18 +224,20 @@ export async function addExpense(
   title: string,
   amount: number,
   paidBy: string,
-  splitBetween: string[]
+  splitBetween: string[],
+  currency?: string,
+  category?: string
 ): Promise<string> {
   const numericAmount = Number(amount) || 0;
   const ref = await addDoc(collection(db, TEAMS, teamId, EXPENSES), {
     title: title.trim(),
     amount: numericAmount,
-    currency: CURRENCY,
+    currency: currency ?? CURRENCY,
     paidBy,
     splitBetween: splitBetween.length ? splitBetween : [paidBy],
     createdAt: serverTimestamp(),
+    category: category || 'general',
   });
-  // keep aggregated total on the team document
   const teamRef = doc(db, TEAMS, teamId);
   await updateDoc(teamRef, {
     totalAmount: increment(numericAmount),
@@ -244,7 +251,8 @@ export async function updateExpense(
   title: string,
   amount: number,
   paidBy: string,
-  splitBetween: string[]
+  splitBetween: string[],
+  category?: string
 ): Promise<void> {
   const ref = doc(db, TEAMS, teamId, EXPENSES, expenseId);
   const snap = await getDoc(ref);
@@ -254,12 +262,14 @@ export async function updateExpense(
   const existing = snap.data() as Record<string, unknown>;
   const prevAmount = Number(existing.amount) || 0;
   const numericAmount = Number(amount) || 0;
-  await updateDoc(ref, {
+  const payload: Record<string, unknown> = {
     title: title.trim(),
     amount: numericAmount,
     paidBy,
     splitBetween: splitBetween.length ? splitBetween : (existing.splitBetween as string[]),
-  });
+  };
+  if (category !== undefined) payload.category = category || 'general';
+  await updateDoc(ref, payload);
   const diff = numericAmount - prevAmount;
   if (diff !== 0) {
     const teamRef = doc(db, TEAMS, teamId);
@@ -431,6 +441,97 @@ export async function getMemberBalancesForUser(uid: string): Promise<MemberBalan
   return result;
 }
 
+export interface DashboardExtended {
+  teams: TeamSummary[];
+  memberBalances: MemberBalanceSummary[];
+  monthlySpending: number;
+  categoryTotals: Record<string, number>;
+}
+
+export async function getDashboardExtended(uid: string): Promise<DashboardExtended> {
+  const now = new Date();
+  const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000;
+  const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).getTime() / 1000;
+  const teams = await getTeamsForUser(uid);
+  const nameCache = new Map<string, string>();
+  const teamSummaries: TeamSummary[] = [];
+  const allMemberBalances: MemberBalanceSummary[] = [];
+  let monthlySpending = 0;
+  const categoryTotals: Record<string, number> = {};
+
+  for (const team of teams) {
+    const expenses = await getExpensesForTeam(team.id);
+    const balance = computeBalanceForUserInTeam(expenses, uid);
+    const youOwe = balance < 0 ? Math.abs(balance) : 0;
+    const owedToYou = balance > 0 ? balance : 0;
+    const memberCount = (team.memberIds?.length || 0) + (team.guestMembers?.length || 0);
+    teamSummaries.push({
+      id: team.id,
+      name: team.name,
+      youOwe,
+      owedToYou,
+      memberCount,
+      icon: team.icon,
+    });
+
+    const memberIds = team.memberIds || [];
+    const guestMembers = team.guestMembers || [];
+    const teamBalances = new Map<string, number>();
+    for (const g of guestMembers) {
+      if (!nameCache.has(g.id)) nameCache.set(g.id, g.name);
+    }
+    const allIds = new Set<string>([...memberIds, ...guestMembers.map((g) => g.id)]);
+
+    for (const e of expenses) {
+      const sec = e.createdAt?.seconds ?? 0;
+      if (sec >= currentMonthStart && sec <= currentMonthEnd) {
+        monthlySpending += e.amount;
+        const cat = e.category || 'general';
+        categoryTotals[cat] = (categoryTotals[cat] || 0) + e.amount;
+      }
+      const share = e.splitBetween.length ? e.amount / e.splitBetween.length : 0;
+      if (e.paidBy === uid) {
+        for (const participantId of e.splitBetween) {
+          if (participantId === uid) continue;
+          teamBalances.set(participantId, (teamBalances.get(participantId) || 0) + share);
+        }
+      }
+      if (e.paidBy !== uid && e.splitBetween.includes(uid) && allIds.has(e.paidBy)) {
+        teamBalances.set(e.paidBy, (teamBalances.get(e.paidBy) || 0) - share);
+      }
+    }
+
+    for (const memberId of teamBalances.keys()) {
+      if (memberId === uid) continue;
+      if (!nameCache.has(memberId)) {
+        try {
+          const profile = await getUserProfile(memberId);
+          if (profile) nameCache.set(memberId, profile.displayName || profile.email || 'Friend');
+        } catch {
+          // ignore
+        }
+      }
+      const net = teamBalances.get(memberId) ?? 0;
+      if (net === 0) continue;
+      allMemberBalances.push({
+        id: memberId,
+        name: nameCache.get(memberId) ?? 'Friend',
+        net,
+        teamId: team.id,
+        teamName: team.name,
+      });
+    }
+  }
+
+  allMemberBalances.sort((a, b) => Math.abs(b.net) - Math.abs(a.net));
+  return {
+    teams: teamSummaries,
+    memberBalances: allMemberBalances,
+    monthlySpending,
+    categoryTotals,
+  };
+}
+
 /** Per-member balance within one team (reference: getMemberBalance). For current user's view. */
 export async function getMemberBalancesForTeam(
   teamId: string,
@@ -521,6 +622,135 @@ export async function getRecentActivity(uid: string, limit = 50): Promise<Activi
   }
   items.sort((a, b) => b.createdAt.seconds - a.createdAt.seconds);
   return items.slice(0, limit);
+}
+
+// ---------- Recurring expenses ----------
+function toRecurringExpense(data: Record<string, unknown>, id: string, teamId: string): RecurringExpense {
+  const t = (data.createdAt as Timestamp) || { seconds: 0, nanoseconds: 0 };
+  const last = data.lastCreatedAt as Timestamp | undefined;
+  return {
+    id,
+    teamId,
+    title: (data.title as string) || '',
+    amount: Number(data.amount) || 0,
+    currency: (data.currency as string) || CURRENCY,
+    paidBy: (data.paidBy as string) || '',
+    splitBetween: (data.splitBetween as string[]) || [],
+    frequency: (data.frequency as 'weekly' | 'monthly') || 'monthly',
+    interval: Number(data.interval) || 1,
+    createdAt: { seconds: t.seconds, nanoseconds: t.nanoseconds },
+    lastCreatedAt: last ? { seconds: last.seconds, nanoseconds: last.nanoseconds } : undefined,
+  };
+}
+
+export async function getRecurringForTeam(teamId: string): Promise<RecurringExpense[]> {
+  const q = query(
+    collection(db, TEAMS, teamId, RECURRING),
+    orderBy('createdAt', 'desc')
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => toRecurringExpense(d.data() as Record<string, unknown>, d.id, teamId));
+}
+
+export async function addRecurringExpense(
+  teamId: string,
+  title: string,
+  amount: number,
+  paidBy: string,
+  splitBetween: string[],
+  frequency: 'weekly' | 'monthly',
+  interval: number,
+  currency?: string
+): Promise<string> {
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error('Not signed in');
+  const ref = await addDoc(collection(db, TEAMS, teamId, RECURRING), {
+    title: title.trim(),
+    amount: Number(amount) || 0,
+    currency: currency ?? CURRENCY,
+    paidBy,
+    splitBetween: splitBetween.length ? splitBetween : [paidBy],
+    frequency: frequency || 'monthly',
+    interval: Math.max(1, Number(interval) || 1),
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function createExpenseFromRecurring(teamId: string, recurringId: string): Promise<string> {
+  const recRef = doc(db, TEAMS, teamId, RECURRING, recurringId);
+  const recSnap = await getDoc(recRef);
+  if (!recSnap.exists()) throw new Error('Recurring expense not found');
+  const data = recSnap.data() as Record<string, unknown>;
+  const title = (data.title as string) || '';
+  const amount = Number(data.amount) || 0;
+  const paidBy = (data.paidBy as string) || '';
+  const splitBetween = (data.splitBetween as string[]) || [];
+  const currency = (data.currency as string) || CURRENCY;
+  const expenseId = await addExpense(teamId, title, amount, paidBy, splitBetween, currency);
+  await updateDoc(recRef, { lastCreatedAt: serverTimestamp() });
+  return expenseId;
+}
+
+export async function deleteRecurringExpense(teamId: string, recurringId: string): Promise<void> {
+  const ref = doc(db, TEAMS, teamId, RECURRING, recurringId);
+  await deleteDoc(ref);
+}
+
+// ---------- Reminders ----------
+function toReminder(data: Record<string, unknown>, id: string): Reminder {
+  const t = (data.createdAt as Timestamp) || { seconds: 0, nanoseconds: 0 };
+  const remindAt = data.remindAt as Timestamp | undefined;
+  return {
+    id,
+    targetType: (data.targetType as 'friend' | 'member') || 'friend',
+    targetId: (data.targetId as string) || '',
+    targetName: (data.targetName as string) || '',
+    amount: Number(data.amount) || 0,
+    description: (data.description as string) || undefined,
+    expenseId: (data.expenseId as string) || undefined,
+    teamId: (data.teamId as string) || undefined,
+    friendId: (data.friendId as string) || undefined,
+    status: (data.status as 'pending' | 'dismissed') || 'pending',
+    createdAt: { seconds: t.seconds, nanoseconds: t.nanoseconds },
+    remindAt: remindAt ? { seconds: remindAt.seconds, nanoseconds: remindAt.nanoseconds } : undefined,
+  };
+}
+
+export async function getReminders(uid: string): Promise<Reminder[]> {
+  const q = query(
+    collection(db, USERS, uid, REMINDERS),
+    orderBy('createdAt', 'desc')
+  );
+  const snap = await getDocs(q);
+  const list = snap.docs.map((d) => toReminder(d.data() as Record<string, unknown>, d.id));
+  return list.filter((r) => r.status === 'pending');
+}
+
+export async function addReminder(
+  uid: string,
+  params: {
+    targetType: 'friend' | 'member';
+    targetId: string;
+    targetName: string;
+    amount: number;
+    description?: string;
+    expenseId?: string;
+    teamId?: string;
+    friendId?: string;
+  }
+): Promise<string> {
+  const ref = await addDoc(collection(db, USERS, uid, REMINDERS), {
+    ...params,
+    status: 'pending',
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function dismissReminder(uid: string, reminderId: string): Promise<void> {
+  const ref = doc(db, USERS, uid, REMINDERS, reminderId);
+  await updateDoc(ref, { status: 'dismissed' });
 }
 
 export { CURRENCY };
