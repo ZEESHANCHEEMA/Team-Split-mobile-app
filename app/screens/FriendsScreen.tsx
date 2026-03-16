@@ -253,9 +253,8 @@ function makeStyles(colors: Colors, radius: { xl: number; lg: number }) {
     amountNegative: { color: colors.primary },
     settledText: { fontSize: 12, color: colors.mutedText },
     emptyWrapper: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
+      flexGrow: 1,
+  paddingTop: 130,
     },
     emptyInner: {
       justifyContent: 'center',

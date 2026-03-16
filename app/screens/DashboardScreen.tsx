@@ -14,11 +14,13 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { auth } from '../services/firebaseConfig';
 import { getDashboardTeams, getMemberBalancesForUser } from '../services/firestore';
+import { getFriends, getFriendBalance } from '../services/friendsFirestore';
 import { useCurrency } from '../theme/useCurrency';
 import { useTheme } from '../theme/useTheme';
 import type { RootStackParamList, MainTabParamList } from '../navigation/AppNavigator';
 import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { Colors } from '../theme/colors';
+import type { Friend } from '../types/firestore';
 import { useAppSelector, useAppDispatch } from '../store/hooks';
 import { setDashboardData } from '../store/slices/cacheSlice';
 
@@ -36,22 +38,27 @@ const DashboardScreen: React.FC = () => {
   const CURRENCY = useCurrency();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [friends, setFriends] = useState<Friend[]>([]);
 
   const load = useCallback(async () => {
     const uid = auth.currentUser?.uid;
     if (!uid) {
       dispatch(setDashboardData({ teams: [], memberBalances: [] }));
+      setFriends([]);
       setLoading(false);
       return;
     }
     try {
-      const [teamsData, memberData] = await Promise.all([
+      const [teamsData, memberData, friendsData] = await Promise.all([
         getDashboardTeams(uid),
         getMemberBalancesForUser(uid),
+        getFriends(uid),
       ]);
       dispatch(setDashboardData({ teams: teamsData, memberBalances: memberData }));
+      setFriends(friendsData);
     } catch {
       dispatch(setDashboardData({ teams: [], memberBalances: [] }));
+      setFriends([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -70,8 +77,15 @@ const DashboardScreen: React.FC = () => {
     load();
   }, [load]);
 
-  const totalYouOwe = teams.reduce((sum, t) => sum + t.youOwe, 0);
-  const totalOwedToYou = teams.reduce((sum, t) => sum + t.owedToYou, 0);
+  const friendNet = friends.reduce((sum, f) => {
+    const bal = getFriendBalance(f);
+    return sum + (bal.theyOweMe - bal.iOweThem);
+  }, 0);
+  const friendsToReceive = Math.max(0, friendNet);
+  const friendsToPay = Math.max(0, -friendNet);
+
+  const totalYouOwe = teams.reduce((sum, t) => sum + t.youOwe, 0) + friendsToPay;
+  const totalOwedToYou = teams.reduce((sum, t) => sum + t.owedToYou, 0) + friendsToReceive;
   const totalPending = totalYouOwe + totalOwedToYou;
   const totalSettled = 0; // optional: sum of settled amounts if we track it
   const netBalance = totalOwedToYou - totalYouOwe;

@@ -79,6 +79,19 @@ const RegisterScreen: React.FC = () => {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        <View style={styles.headerRow}>
+          <TouchableOpacity
+            onPress={() => navigation.replace('Login')}
+            style={styles.backButton}
+            hitSlop={{ top: 32, bottom: 12, left: 12, right: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+          >
+            <Ionicons name="chevron-back" size={24} color={colors.text} />
+            
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.logoWrap}>
           <Text style={styles.logoS}>TS</Text>
           <Text style={styles.brandName}>Team Split</Text>
@@ -164,9 +177,24 @@ function makeStyles(colors: Colors, radius: { lg: number }) {
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 20,
-    paddingTop: 56,
+    paddingTop: 76,
     paddingBottom: 40,
     justifyContent: 'center',
+  },
+  headerRow: {
+    position: 'absolute',
+    top: 70,
+    left: 20,
+    right: 20,
+    zIndex: 2,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.06)',
   },
   logoWrap: {
     alignItems: 'center',

@@ -22,3 +22,23 @@ allprojects {
 
 apply plugin: "expo-root-project"
 apply plugin: "com.facebook.react.rootproject"
+
+// Fix for New Architecture codegen + Gradle clean:
+// `:app:externalNativeBuildCleanRelease` re-runs CMake, which fails if a library's
+// codegen output directory was deleted earlier in the same `clean` invocation.
+gradle.projectsEvaluated {
+  def asyncStorage = project.findProject(':react-native-async-storage_async-storage')
+  def app = project.findProject(':app')
+  if (asyncStorage != null && app != null) {
+    def codegen = asyncStorage.tasks.findByName('generateCodegenArtifactsFromSchema')
+    def asyncClean = asyncStorage.tasks.findByName('clean')
+    def appNativeCleans = app.tasks.matching { it.name.startsWith('externalNativeBuildClean') }
+
+    if (codegen != null) {
+      appNativeCleans.configureEach { it.dependsOn(codegen) }
+    }
+    if (asyncClean != null) {
+      appNativeCleans.configureEach { asyncClean.mustRunAfter(it) }
+    }
+  }
+}

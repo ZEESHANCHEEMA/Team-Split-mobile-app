@@ -132,6 +132,32 @@ android {
     }
 }
 
+// Ensure library codegen runs before CMake config/clean.
+// This avoids failures when the codegen output folder doesn't exist yet (fresh installs / clean builds).
+afterEvaluate {
+    def asyncStorageProject = project.findProject(':react-native-async-storage_async-storage')
+    def codegenTask = asyncStorageProject?.tasks?.findByName('generateCodegenArtifactsFromSchema')
+    if (codegenTask != null) {
+        // Ensure codegen outputs exist before any CMake config/build/clean.
+        tasks.matching { t ->
+            t.name.startsWith('configureCMake') ||
+            t.name.startsWith('externalNativeBuild') ||
+            t.name.startsWith('externalNativeBuildClean')
+        }.configureEach { t ->
+            t.dependsOn(codegenTask)
+        }
+
+        // When running `./gradlew clean`, the library's `clean` task can delete the codegen folder
+        // before the app's native clean task runs, causing CMake to fail. Force ordering.
+        def asyncClean = asyncStorageProject?.tasks?.findByName('clean')
+        if (asyncClean != null) {
+            tasks.matching { t -> t.name.startsWith('externalNativeBuildClean') }.configureEach { t ->
+                asyncClean.mustRunAfter(t)
+            }
+        }
+    }
+}
+
 // Apply static values from `gradle.properties` to the `android.packagingOptions`
 // Accepts values in comma delimited lists, example:
 // android.packagingOptions.pickFirsts=/LICENSE,**/picasa.ini
