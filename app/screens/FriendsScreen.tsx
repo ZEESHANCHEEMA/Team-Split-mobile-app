@@ -11,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  RefreshControl
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -44,7 +45,7 @@ const FriendsScreen: React.FC = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-
+  const [refreshing, setRefreshing] = useState(false);
   const load = useCallback(async () => {
     const uid = auth.currentUser?.uid;
     if (!uid) {
@@ -123,6 +124,11 @@ const FriendsScreen: React.FC = () => {
     }
   };
 
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    load();
+  }, [load]);
+
   if (loading && friends.length === 0) {
     return (
       <View style={[styles.container, styles.centered]}>
@@ -161,6 +167,7 @@ const FriendsScreen: React.FC = () => {
       ) : (
         <AnimatedFadeInUp delay={80} duration={400} style={{ flex: 1 }}>
           <FlatList
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
             data={friends}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.listContent}

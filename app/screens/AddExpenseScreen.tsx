@@ -6,10 +6,8 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -238,17 +236,15 @@ const AddExpenseScreen: React.FC<Props> = ({ navigation, route }) => {
         <Text style={styles.title}>{isEditing ? 'Edit expense' : 'Split a Bill'}</Text>
       </View>
 
-      <KeyboardAvoidingView
+      <KeyboardAwareScrollView
         style={styles.formWrapper}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={56}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        enableOnAndroid
+        extraScrollHeight={24}
+        enableAutomaticScroll
       >
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
         <Text style={styles.label}>Description</Text>
         <TextInput
           style={styles.input}
@@ -501,8 +497,7 @@ const AddExpenseScreen: React.FC<Props> = ({ navigation, route }) => {
             <Text style={styles.deleteButtonText}>Delete expense</Text>
           </TouchableOpacity>
         )}
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
     </View>
   );
 };

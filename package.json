@@ -7,7 +7,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "build:android:apk": "eas build --platform android --profile preview"
+    "build:android:apk": "eas build --platform android --profile preview",
+    "copy-splash:ios": "node scripts/copy-splash-ios.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",

@@ -4,6 +4,24 @@ apply plugin: "com.facebook.react"
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
 
+// Copy splash screen from assets so Android uses the same image as app.json
+task copySplashScreen(type: Copy) {
+    def splashSource = file("${projectDir}/../../assets/splash.png")
+    from(splashSource)
+    into(file("${projectDir}/src/main/res/drawable-nodpi"))
+    rename('splash.png', 'splashscreen_logo.png')
+}
+tasks.whenTaskAdded { task ->
+    if (task.name.startsWith('merge') && task.name.endsWith('Resources')) {
+        task.dependsOn copySplashScreen
+    }
+}
+afterEvaluate {
+    ['mapDebugSourceSetPaths', 'mapReleaseSourceSetPaths', 'generateDebugResources', 'generateReleaseResources'].each { taskName ->
+        tasks.findByName(taskName)?.dependsOn(copySplashScreen)
+    }
+}
+
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.

@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   FlatList,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { auth } from '../services/firebaseConfig';
@@ -36,6 +37,7 @@ const CreateTeamScreen: React.FC = () => {
   const CURRENCY = useCurrency();
   const { teams, lastFetchedAt } = useAppSelector((s) => s.cache);
   const [listLoading, setListLoading] = useState(!lastFetchedAt);
+  const [refreshing, setRefreshing] = useState(false);
 
   const loadTeams = useCallback(async () => {
     const uid = auth.currentUser?.uid;
@@ -71,6 +73,11 @@ const CreateTeamScreen: React.FC = () => {
     navigation.navigate('TeamDetail', { teamId });
   };
 
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadTeams().finally(() => setRefreshing(false));
+  }, [loadTeams]);
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -97,6 +104,9 @@ const CreateTeamScreen: React.FC = () => {
           keyExtractor={(item) => item.id}
           style={styles.list}
           contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+          }
           ListEmptyComponent={
             <View style={styles.empty}>
               <Text style={styles.emptyTitle}>No teams yet</Text>

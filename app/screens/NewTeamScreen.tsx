@@ -6,10 +6,8 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { auth } from '../services/firebaseConfig';
@@ -85,9 +83,14 @@ const NewTeamScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   return (
-    <KeyboardAvoidingView
+    <KeyboardAwareScrollView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      contentContainerStyle={styles.scrollContent}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+      enableOnAndroid
+      extraScrollHeight={24}
+      enableAutomaticScroll
     >
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
@@ -95,13 +98,6 @@ const NewTeamScreen: React.FC<Props> = ({ navigation }) => {
         </TouchableOpacity>
         <Text style={styles.title}>Create Team</Text>
       </View>
-
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
         <Text style={styles.label}>Icon</Text>
         <View style={styles.iconRow}>
           {TEAM_ICONS.map((emoji) => (
@@ -158,7 +154,6 @@ const NewTeamScreen: React.FC<Props> = ({ navigation }) => {
           <Text style={styles.addMemberButtonText}>Add Member</Text>
         </TouchableOpacity>
         {error ? <Text style={styles.error}>{error}</Text> : null}
-      </ScrollView>
 
       <View style={styles.buttonFooter}>
         <TouchableOpacity
@@ -173,7 +168,7 @@ const NewTeamScreen: React.FC<Props> = ({ navigation }) => {
           )}
         </TouchableOpacity>
       </View>
-    </KeyboardAvoidingView>
+    </KeyboardAwareScrollView>
   );
 };
 

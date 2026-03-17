@@ -191,6 +191,7 @@ const ActivityScreen: React.FC = () => {
         data={filteredItems}
         keyExtractor={(item) => `${item.teamId}-${item.id}`}
         contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
         }
@@ -284,7 +285,9 @@ function makeStyles(colors: Colors, radius: { lg: number }) {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    paddingLeft: 4,
     paddingRight: 20,
+    marginVertical: 6,
   },
   chipRow: {
     flexDirection: 'row',

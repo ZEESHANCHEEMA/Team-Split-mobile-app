@@ -433,7 +433,7 @@ function makeStyles(colors: Colors, radius: { xl: number; lg: number }) {
     paddingTop: 56,
   },
   scrollContent: {
-    paddingBottom: 100,
+    paddingBottom: 200,
   },
   centered: {
     justifyContent: 'center',
