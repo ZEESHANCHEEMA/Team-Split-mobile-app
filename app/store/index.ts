@@ -14,8 +14,9 @@ const rootReducer = combineReducers({
 const persistConfig = {
   key: 'root',
   storage: AsyncStorage,
-  whitelist: ['auth', 'cache', 'settings'],
-  // Never persist sensitive data; auth slice only has uid, email, displayName, photoURL
+  // Do not persist auth: session is owned by Firebase Auth (AsyncStorage / web persistence).
+  // Redux auth slice is synced from onAuthStateChanged only.
+  whitelist: ['cache', 'settings'],
 };
 
 const persistedReducer = persistReducer(persistConfig, rootReducer);

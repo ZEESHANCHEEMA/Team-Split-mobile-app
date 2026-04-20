@@ -24,6 +24,7 @@ import {
   removeMemberFromTeam,
 } from '../services/firestore';
 import { showToast } from '../utils/toast';
+import { logFirebaseError } from '../utils/firebaseDebug';
 import { useCurrency } from '../theme/useCurrency';
 import { useTheme } from '../theme/useTheme';
 import type { Colors } from '../theme/colors';
@@ -148,8 +149,8 @@ const AddExpenseScreen: React.FC<Props> = ({ navigation, route }) => {
               null;
             setPaidById(defaultPayer ? defaultPayer.id : null);
           }
-        } catch {
-          // leave defaults; minimal impact on UX
+        } catch (e) {
+          logFirebaseError('AddExpenseScreen.loadTeam', e, { teamId });
         }
       };
 
@@ -199,7 +200,8 @@ const AddExpenseScreen: React.FC<Props> = ({ navigation, route }) => {
       setTitle('');
       setAmount('');
       navigation.goBack();
-    } catch {
+    } catch (e) {
+      logFirebaseError('AddExpenseScreen.handleSubmit', e, { teamId, expenseId });
       const message = 'Could not save expense. Try again.';
       setError(message);
       showToast(message);

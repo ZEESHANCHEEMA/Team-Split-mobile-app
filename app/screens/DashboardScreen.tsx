@@ -9,6 +9,7 @@ import {
   RefreshControl,
   ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,6 +28,13 @@ import { setDashboardData } from '../store/slices/cacheSlice';
 import OnboardingOverlay from '../components/OnboardingOverlay';
 import { getOnboardingComplete, setOnboardingComplete } from '../utils/onboardingStorage';
 import { EXPENSE_CATEGORIES } from '../constants/categories';
+import { logFirebaseError, logFirebaseInfo } from '../utils/firebaseDebug';
+import { store } from '../store';
+import {
+  getScrollBottomPaddingForTabs,
+  SCREEN_HORIZONTAL_PADDING,
+  TAB_SCREEN_TOP_OFFSET,
+} from '../theme/screenLayout';
 
 type DashboardNavigation = CompositeNavigationProp<
   NativeStackNavigationProp<MainTabParamList, 'Dashboard'>,
@@ -35,9 +43,14 @@ type DashboardNavigation = CompositeNavigationProp<
 
 const DashboardScreen: React.FC = () => {
   const navigation = useNavigation<DashboardNavigation>();
+  const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
   const { colors, radius } = useTheme();
   const styles = useMemo(() => makeStyles(colors, radius), [colors, radius]);
+  const tabScrollBottom = useMemo(
+    () => getScrollBottomPaddingForTabs(insets.bottom),
+    [insets.bottom]
+  );
   const { teams, memberBalances } = useAppSelector(state => state.cache);
   const CURRENCY = useCurrency();
   const [loading, setLoading] = useState(true);
@@ -51,6 +64,7 @@ const DashboardScreen: React.FC = () => {
   const load = useCallback(async () => {
     const uid = auth.currentUser?.uid;
     if (!uid) {
+      logFirebaseInfo('DashboardScreen.load', 'skipped: no uid (auth.currentUser null)');
       dispatch(setDashboardData({ teams: [], memberBalances: [] }));
       setFriends([]);
       setReminders([]);
@@ -68,7 +82,8 @@ const DashboardScreen: React.FC = () => {
       setReminders(remindersData);
       setMonthlySpendingTeam(extended.monthlySpending);
       setCategoryTotalsTeam(extended.categoryTotals);
-    } catch {
+    } catch (e) {
+      logFirebaseError('DashboardScreen.load', e, { uid });
       dispatch(setDashboardData({ teams: [], memberBalances: [] }));
       setFriends([]);
       setReminders([]);
@@ -82,7 +97,12 @@ const DashboardScreen: React.FC = () => {
 
   useFocusEffect(
     useCallback(() => {
-      setLoading(true);
+      const { teams: cachedTeams } = store.getState().cache;
+      if (cachedTeams.length === 0) {
+        setLoading(true);
+      } else {
+        setLoading(false);
+      }
       load();
       getOnboardingComplete().then(setOnboardingCompleteState);
     }, [load])
@@ -116,8 +136,8 @@ const DashboardScreen: React.FC = () => {
       try {
         await dismissReminder(uid, reminderId);
         setReminders((prev) => prev.filter((r) => r.id !== reminderId));
-      } catch {
-        // ignore
+      } catch (e) {
+        logFirebaseError('DashboardScreen.dismissReminder', e, { uid, reminderId });
       }
     },
     []
@@ -192,7 +212,16 @@ const DashboardScreen: React.FC = () => {
 
   if (loading && teams.length === 0) {
     return (
-      <View style={[styles.container, styles.centered]}>
+      <View
+        style={[
+          styles.container,
+          styles.centered,
+          {
+            paddingTop: insets.top + TAB_SCREEN_TOP_OFFSET,
+            paddingHorizontal: SCREEN_HORIZONTAL_PADDING,
+          },
+        ]}
+      >
         <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
@@ -209,9 +238,20 @@ const DashboardScreen: React.FC = () => {
         onComplete={handleOnboardingComplete}
       />
       <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.scrollContent}
+        style={[
+          styles.container,
+          {
+            paddingTop: insets.top + TAB_SCREEN_TOP_OFFSET,
+            paddingHorizontal: SCREEN_HORIZONTAL_PADDING,
+          },
+        ]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: tabScrollBottom }]}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+        }
       >
         <Text style={styles.greeting}>Welcome back 👋</Text>
       <Text style={styles.appTitle}>TeamSplit</Text>
@@ -429,12 +469,8 @@ function makeStyles(colors: Colors, radius: { xl: number; lg: number }) {
   container: {
     flex: 1,
     backgroundColor: colors.background,
-    paddingHorizontal: 20,
-    paddingTop: 56,
   },
-  scrollContent: {
-    paddingBottom: 200,
-  },
+  scrollContent: {},
   centered: {
     justifyContent: 'center',
     alignItems: 'center',

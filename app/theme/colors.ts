@@ -1,47 +1,43 @@
-/**
- * Splitwise-Plus–style design tokens.
- * Light: background ~#FAF8F5, primary #E85C3A. Dark: dark grays, same primary.
- */
 export type ThemeType = 'light' | 'dark';
 
 const lightColors = {
-  background: '#FAF8F5',
+  background: '#F4F7FB',
   surface: '#FFFFFF',
   card: '#FFFFFF',
-  primary: '#E85C3A',
+  primary: '#F2644B',
   primaryTextOnPrimary: '#FFFFFF',
-  secondary: '#E8EAEF',
-  secondaryText: '#1A202C',
-  muted: '#E8EAED',
-  mutedText: '#6B7280',
-  text: '#1A202C',
-  accent: '#2D9D8A',
+  secondary: '#E9F0F7',
+  secondaryText: '#18212F',
+  muted: '#EDF3F8',
+  mutedText: '#66768C',
+  text: '#18212F',
+  accent: '#1F9D84',
   accentTextOnAccent: '#FFFFFF',
-  border: '#D8DBE2',
-  input: '#D8DBE2',
+  border: '#D6DFE8',
+  input: '#D6DFE8',
   danger: '#D93030',
-  success: '#1E9B6B',
-  warning: '#E5A319',
+  success: '#159A6F',
+  warning: '#D89A1C',
 };
 
 const darkColors = {
-  background: '#1A1D24',
-  surface: '#252830',
-  card: '#252830',
-  primary: '#E85C3A',
+  background: '#0F1722',
+  surface: '#162131',
+  card: '#172334',
+  primary: '#FF7A5C',
   primaryTextOnPrimary: '#FFFFFF',
-  secondary: '#2D323D',
-  secondaryText: '#E8EAEF',
-  muted: '#2D323D',
-  mutedText: '#9CA3AF',
-  text: '#F3F4F6',
-  accent: '#2D9D8A',
+  secondary: '#223044',
+  secondaryText: '#F4F7FB',
+  muted: '#223044',
+  mutedText: '#9AA9BE',
+  text: '#F4F7FB',
+  accent: '#2AB69A',
   accentTextOnAccent: '#FFFFFF',
-  border: '#374151',
-  input: '#374151',
+  border: '#314255',
+  input: '#314255',
   danger: '#EF4444',
-  success: '#22C55E',
-  warning: '#F59E0B',
+  success: '#2AD18D',
+  warning: '#F6B73D',
 };
 
 export type Colors = typeof lightColors;
@@ -53,7 +49,6 @@ export function getColors(theme: ThemeType): Colors {
 /** Default export for backwards compatibility (light theme). */
 export const colors = lightColors;
 
-/** Border radius token (1rem = 16). Cards use 20 (rounded-2xl). */
 export const radius = {
   sm: 8,
   md: 12,

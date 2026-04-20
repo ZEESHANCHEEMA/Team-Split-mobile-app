@@ -1,8 +1,8 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 /**
- * Auth state for display only. No passwords or tokens.
- * Firebase Auth remains source of truth; this is a cache for fast UI.
+ * Auth state for display only (not persisted). No passwords or tokens.
+ * Firebase Auth + onAuthStateChanged are the source of truth; this slice is synced from there.
  */
 export interface AuthState {
   uid: string | null;

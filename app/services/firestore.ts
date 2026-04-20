@@ -13,8 +13,10 @@ import {
   serverTimestamp,
   Timestamp,
   increment,
+  type DocumentData,
 } from 'firebase/firestore';
-import { db, auth } from './firebaseConfig';
+import { db, auth, ensureAuthReadyForFirestore, firebaseProjectId } from './firebaseConfig';
+import { logFirebaseError, logFirebaseInfo } from '../utils/firebaseDebug';
 import type {
   UserProfile,
   Team,
@@ -33,6 +35,7 @@ const EXPENSES = 'expenses';
 const RECURRING = 'recurring';
 const REMINDERS = 'reminders';
 const CURRENCY = 'Rs';
+const FIREBASE_DEBUG_TEAM_ID = process.env.EXPO_PUBLIC_FIREBASE_DEBUG_TEAM_ID?.trim() || '';
 
 function toUserProfile(data: Record<string, unknown>, id: string): UserProfile {
   const t = (data.createdAt as Timestamp) || { seconds: 0, nanoseconds: 0 };
@@ -79,6 +82,86 @@ function toExpense(data: Record<string, unknown>, id: string): Expense {
   };
 }
 
+type TeamAccessDiagnosticStatus =
+  | 'skipped'
+  | 'query-denied'
+  | 'team-doc-allowed'
+  | 'team-doc-not-found'
+  | 'team-doc-denied'
+  | 'team-doc-read-failed';
+
+interface TeamAccessDiagnostic {
+  [key: string]: unknown;
+  status: TeamAccessDiagnosticStatus;
+  authUid: string;
+  debugTeamId?: string;
+  memberIds?: string[];
+  containsAuthUid?: boolean;
+  createdBy?: string;
+  note?: string;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+function extractTeamMembershipMeta(data: DocumentData, authUid: string): Omit<
+  TeamAccessDiagnostic,
+  'status' | 'authUid'
+> {
+  const memberIds = Array.isArray(data.memberIds)
+    ? data.memberIds.filter((id): id is string => typeof id === 'string')
+    : undefined;
+
+  return {
+    memberIds,
+    containsAuthUid: memberIds?.includes(authUid) ?? false,
+    createdBy: typeof data.createdBy === 'string' ? data.createdBy : undefined,
+  };
+}
+
+async function diagnoseTeamAccess(authUid: string): Promise<TeamAccessDiagnostic> {
+  if (!FIREBASE_DEBUG_TEAM_ID) {
+    return {
+      status: 'skipped',
+      authUid,
+      note:
+        'Set EXPO_PUBLIC_FIREBASE_DEBUG_TEAM_ID to a real /teams/{teamId} document id to run team access diagnostics.',
+    };
+  }
+
+  const teamRef = doc(db, TEAMS, FIREBASE_DEBUG_TEAM_ID);
+  try {
+    const snap = await getDoc(teamRef);
+    if (!snap.exists()) {
+      return {
+        status: 'team-doc-not-found',
+        authUid,
+        debugTeamId: FIREBASE_DEBUG_TEAM_ID,
+        note: 'Debug team document does not exist in Firestore.',
+      };
+    }
+
+    return {
+      status: 'team-doc-allowed',
+      authUid,
+      debugTeamId: FIREBASE_DEBUG_TEAM_ID,
+      ...extractTeamMembershipMeta(snap.data(), authUid),
+    };
+  } catch (e) {
+    const err = e as { code?: string; message?: string };
+    return {
+      status: err.code === 'permission-denied' ? 'team-doc-denied' : 'team-doc-read-failed',
+      authUid,
+      debugTeamId: FIREBASE_DEBUG_TEAM_ID,
+      errorCode: err.code,
+      errorMessage: err.message,
+      note:
+        err.code === 'permission-denied'
+          ? 'Direct read of the debug team doc was denied. This usually means the doc memberIds does not include authUid, or Firestore App Check/enforcement is blocking the request.'
+          : 'Reading the debug team doc failed with a non-permission error.',
+    };
+  }
+}
+
 export async function ensureUserProfile(
   uid: string,
   displayName: string,
@@ -88,6 +171,7 @@ export async function ensureUserProfile(
   country?: string,
   currency?: string
 ): Promise<void> {
+  await ensureAuthReadyForFirestore();
   const ref = doc(db, USERS, uid);
   const snap = await getDoc(ref);
   if (snap.exists()) {
@@ -117,6 +201,7 @@ export async function ensureUserProfile(
 }
 
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
+  await ensureAuthReadyForFirestore();
   const ref = doc(db, USERS, uid);
   const snap = await getDoc(ref);
   if (!snap.exists()) return null;
@@ -142,6 +227,7 @@ export async function createTeam(
 ): Promise<string> {
   const uid = auth.currentUser?.uid;
   if (!uid) throw new Error('Not signed in');
+  await ensureAuthReadyForFirestore();
   const ref = await addDoc(collection(db, TEAMS), {
     name: name.trim(),
     createdBy: uid,
@@ -154,17 +240,45 @@ export async function createTeam(
 }
 
 export async function getTeamsForUser(uid: string): Promise<Team[]> {
-  const q = query(
-    collection(db, TEAMS),
-    where('memberIds', 'array-contains', uid)
-  );
-  const snap = await getDocs(q);
-  const teams = snap.docs.map((d) => toTeam(d.data() as Record<string, unknown>, d.id));
-  teams.sort((a, b) => b.createdAt.seconds - a.createdAt.seconds);
-  return teams;
+  try {
+    await ensureAuthReadyForFirestore();
+    // Firestore security rules only treat the query as "scoped to the signed-in user" when the
+    // array-contains value matches request.auth.uid; use the Auth uid for the constraint, not only
+    // a caller parameter (see rules on /teams/{teamId}).
+    const authUid = auth.currentUser?.uid;
+    if (!authUid) {
+      throw new Error('Not signed in');
+    }
+    if (authUid !== uid) {
+      throw new Error('getTeamsForUser: uid must match signed-in user');
+    }
+    const q = query(
+      collection(db, TEAMS),
+      where('memberIds', 'array-contains', authUid)
+    );
+    const snap = await getDocs(q);
+    const teams = snap.docs.map((d) => toTeam(d.data() as Record<string, unknown>, d.id));
+    teams.sort((a, b) => b.createdAt.seconds - a.createdAt.seconds);
+    return teams;
+  } catch (e) {
+    const err = e as { code?: string };
+    if (err.code === 'permission-denied') {
+      const authUid = auth.currentUser?.uid ?? '(missing auth.currentUser.uid)';
+      const diagnostic = await diagnoseTeamAccess(authUid);
+      logFirebaseInfo(
+        'getTeamsForUser',
+        'permission-denied: (1) Deploy rules: yarn deploy:firestore. (2) Firebase Console → Firestore → Rules must match repo. (3) If App Check enforces Firestore, add a debug token or turn enforcement off for dev.',
+        { uid, firebaseProjectId }
+      );
+      logFirebaseInfo('getTeamsForUser.debug', 'team access diagnostic', diagnostic);
+    }
+    logFirebaseError('getTeamsForUser', e, { uid, firebaseProjectId });
+    throw e;
+  }
 }
 
 export async function getTeam(teamId: string): Promise<Team | null> {
+  await ensureAuthReadyForFirestore();
   const ref = doc(db, TEAMS, teamId);
   const snap = await getDoc(ref);
   if (!snap.exists()) return null;
@@ -172,15 +286,22 @@ export async function getTeam(teamId: string): Promise<Team | null> {
 }
 
 export async function getExpensesForTeam(teamId: string): Promise<Expense[]> {
-  const q = query(
-    collection(db, TEAMS, teamId, EXPENSES),
-    orderBy('createdAt', 'desc')
-  );
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => toExpense(d.data() as Record<string, unknown>, d.id));
+  try {
+    await ensureAuthReadyForFirestore();
+    const q = query(
+      collection(db, TEAMS, teamId, EXPENSES),
+      orderBy('createdAt', 'desc')
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => toExpense(d.data() as Record<string, unknown>, d.id));
+  } catch (e) {
+    logFirebaseError('getExpensesForTeam', e, { teamId });
+    throw e;
+  }
 }
 
 export async function getExpense(teamId: string, expenseId: string): Promise<Expense | null> {
+  await ensureAuthReadyForFirestore();
   const ref = doc(db, TEAMS, teamId, EXPENSES, expenseId);
   const snap = await getDoc(ref);
   if (!snap.exists()) return null;
@@ -228,6 +349,7 @@ export async function addExpense(
   currency?: string,
   category?: string
 ): Promise<string> {
+  await ensureAuthReadyForFirestore();
   const numericAmount = Number(amount) || 0;
   const ref = await addDoc(collection(db, TEAMS, teamId, EXPENSES), {
     title: title.trim(),
@@ -254,6 +376,7 @@ export async function updateExpense(
   splitBetween: string[],
   category?: string
 ): Promise<void> {
+  await ensureAuthReadyForFirestore();
   const ref = doc(db, TEAMS, teamId, EXPENSES, expenseId);
   const snap = await getDoc(ref);
   if (!snap.exists()) {
@@ -278,6 +401,7 @@ export async function updateExpense(
 }
 
 export async function deleteExpense(teamId: string, expenseId: string): Promise<void> {
+  await ensureAuthReadyForFirestore();
   const ref = doc(db, TEAMS, teamId, EXPENSES, expenseId);
   const snap = await getDoc(ref);
   if (!snap.exists()) {
@@ -359,6 +483,7 @@ export async function addGuestMemberToTeam(teamId: string, name: string): Promis
   if (!trimmed) {
     throw new Error('Name required');
   }
+  await ensureAuthReadyForFirestore();
   const ref = doc(db, TEAMS, teamId);
   const snap = await getDoc(ref);
   const existingData = (snap.data() as Record<string, unknown>) || {};
@@ -644,12 +769,18 @@ function toRecurringExpense(data: Record<string, unknown>, id: string, teamId: s
 }
 
 export async function getRecurringForTeam(teamId: string): Promise<RecurringExpense[]> {
-  const q = query(
-    collection(db, TEAMS, teamId, RECURRING),
-    orderBy('createdAt', 'desc')
-  );
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => toRecurringExpense(d.data() as Record<string, unknown>, d.id, teamId));
+  try {
+    await ensureAuthReadyForFirestore();
+    const q = query(
+      collection(db, TEAMS, teamId, RECURRING),
+      orderBy('createdAt', 'desc')
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => toRecurringExpense(d.data() as Record<string, unknown>, d.id, teamId));
+  } catch (e) {
+    logFirebaseError('getRecurringForTeam', e, { teamId });
+    throw e;
+  }
 }
 
 export async function addRecurringExpense(
@@ -664,6 +795,7 @@ export async function addRecurringExpense(
 ): Promise<string> {
   const uid = auth.currentUser?.uid;
   if (!uid) throw new Error('Not signed in');
+  await ensureAuthReadyForFirestore();
   const ref = await addDoc(collection(db, TEAMS, teamId, RECURRING), {
     title: title.trim(),
     amount: Number(amount) || 0,
@@ -678,6 +810,7 @@ export async function addRecurringExpense(
 }
 
 export async function createExpenseFromRecurring(teamId: string, recurringId: string): Promise<string> {
+  await ensureAuthReadyForFirestore();
   const recRef = doc(db, TEAMS, teamId, RECURRING, recurringId);
   const recSnap = await getDoc(recRef);
   if (!recSnap.exists()) throw new Error('Recurring expense not found');
@@ -693,6 +826,7 @@ export async function createExpenseFromRecurring(teamId: string, recurringId: st
 }
 
 export async function deleteRecurringExpense(teamId: string, recurringId: string): Promise<void> {
+  await ensureAuthReadyForFirestore();
   const ref = doc(db, TEAMS, teamId, RECURRING, recurringId);
   await deleteDoc(ref);
 }
@@ -718,13 +852,19 @@ function toReminder(data: Record<string, unknown>, id: string): Reminder {
 }
 
 export async function getReminders(uid: string): Promise<Reminder[]> {
-  const q = query(
-    collection(db, USERS, uid, REMINDERS),
-    orderBy('createdAt', 'desc')
-  );
-  const snap = await getDocs(q);
-  const list = snap.docs.map((d) => toReminder(d.data() as Record<string, unknown>, d.id));
-  return list.filter((r) => r.status === 'pending');
+  try {
+    await ensureAuthReadyForFirestore();
+    const q = query(
+      collection(db, USERS, uid, REMINDERS),
+      orderBy('createdAt', 'desc')
+    );
+    const snap = await getDocs(q);
+    const list = snap.docs.map((d) => toReminder(d.data() as Record<string, unknown>, d.id));
+    return list.filter((r) => r.status === 'pending');
+  } catch (e) {
+    logFirebaseError('getReminders', e, { uid });
+    throw e;
+  }
 }
 
 export async function addReminder(
@@ -740,6 +880,7 @@ export async function addReminder(
     friendId?: string;
   }
 ): Promise<string> {
+  await ensureAuthReadyForFirestore();
   const ref = await addDoc(collection(db, USERS, uid, REMINDERS), {
     ...params,
     status: 'pending',
@@ -749,6 +890,7 @@ export async function addReminder(
 }
 
 export async function dismissReminder(uid: string, reminderId: string): Promise<void> {
+  await ensureAuthReadyForFirestore();
   const ref = doc(db, USERS, uid, REMINDERS, reminderId);
   await updateDoc(ref, { status: 'dismissed' });
 }

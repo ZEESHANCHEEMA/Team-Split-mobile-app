@@ -10,7 +10,8 @@ import {
   serverTimestamp,
   Timestamp,
 } from 'firebase/firestore';
-import { db, auth } from './firebaseConfig';
+import { db, ensureAuthReadyForFirestore } from './firebaseConfig';
+import { logFirebaseError } from '../utils/firebaseDebug';
 import type { Friend, FriendBill, FriendBillSplit } from '../types/firestore';
 
 const USERS = 'users';
@@ -40,27 +41,34 @@ function friendRef(uid: string, friendId: string) {
 }
 
 export async function getFriends(uid: string): Promise<Friend[]> {
-  const ref = collection(db, USERS, uid, FRIENDS);
-  const snap = await getDocs(ref);
-  const result: Friend[] = [];
-  for (const d of snap.docs) {
-    const data = d.data() as Record<string, unknown>;
-    const billsSnap = await getDocs(collection(db, USERS, uid, FRIENDS, d.id, BILLS));
-    const bills: FriendBill[] = billsSnap.docs.map((b) => toFriendBill(b.data() as Record<string, unknown>, b.id));
-    const createdAt = (data.createdAt as Timestamp) || { seconds: 0, nanoseconds: 0 };
-    result.push({
-      id: d.id,
-      name: (data.name as string) || '',
-      phone: (data.phone as string) || undefined,
-      email: (data.email as string) || undefined,
-      bills,
-      createdAt: { seconds: createdAt.seconds, nanoseconds: createdAt.nanoseconds },
-    });
+  try {
+    await ensureAuthReadyForFirestore();
+    const ref = collection(db, USERS, uid, FRIENDS);
+    const snap = await getDocs(ref);
+    const result: Friend[] = [];
+    for (const d of snap.docs) {
+      const data = d.data() as Record<string, unknown>;
+      const billsSnap = await getDocs(collection(db, USERS, uid, FRIENDS, d.id, BILLS));
+      const bills: FriendBill[] = billsSnap.docs.map((b) => toFriendBill(b.data() as Record<string, unknown>, b.id));
+      const createdAt = (data.createdAt as Timestamp) || { seconds: 0, nanoseconds: 0 };
+      result.push({
+        id: d.id,
+        name: (data.name as string) || '',
+        phone: (data.phone as string) || undefined,
+        email: (data.email as string) || undefined,
+        bills,
+        createdAt: { seconds: createdAt.seconds, nanoseconds: createdAt.nanoseconds },
+      });
+    }
+    return result;
+  } catch (e) {
+    logFirebaseError('getFriends', e, { uid });
+    throw e;
   }
-  return result;
 }
 
 export async function getFriend(uid: string, friendId: string): Promise<Friend | null> {
+  await ensureAuthReadyForFirestore();
   const ref = friendRef(uid, friendId);
   const snap = await getDoc(ref);
   if (!snap.exists()) return null;
@@ -79,6 +87,7 @@ export async function getFriend(uid: string, friendId: string): Promise<Friend |
 }
 
 export async function addFriend(uid: string, name: string, phone?: string, email?: string): Promise<string> {
+  await ensureAuthReadyForFirestore();
   const ref = doc(collection(db, USERS, uid, FRIENDS));
   await setDoc(ref, {
     name: name.trim(),
@@ -97,6 +106,7 @@ export async function addFriendBill(
   paidByMe: boolean,
   category?: string
 ): Promise<string> {
+  await ensureAuthReadyForFirestore();
   const ref = friendBillsRef(uid, friendId);
   const half = Math.round((totalAmount / 2) * 100) / 100;
   const splits: FriendBillSplit[] = [
@@ -120,6 +130,7 @@ export async function toggleFriendBillPaid(
   billId: string,
   memberId: string
 ): Promise<void> {
+  await ensureAuthReadyForFirestore();
   const ref = doc(db, USERS, uid, FRIENDS, friendId, BILLS, billId);
   const snap = await getDoc(ref);
   if (!snap.exists()) return;
@@ -136,6 +147,7 @@ export async function deleteFriendBill(
   friendId: string,
   billId: string
 ): Promise<void> {
+  await ensureAuthReadyForFirestore();
   const ref = doc(db, USERS, uid, FRIENDS, friendId, BILLS, billId);
   await deleteDoc(ref);
 }
@@ -158,6 +170,7 @@ export async function updateFriend(
   friendId: string,
   data: { name?: string; phone?: string; email?: string }
 ): Promise<void> {
+  await ensureAuthReadyForFirestore();
   const ref = friendRef(uid, friendId);
   await updateDoc(ref, {
     ...(data.name !== undefined && { name: data.name.trim() }),
@@ -167,6 +180,7 @@ export async function updateFriend(
 }
 
 export async function deleteFriend(uid: string, friendId: string): Promise<void> {
+  await ensureAuthReadyForFirestore();
   const billsRef = friendBillsRef(uid, friendId);
   const billsSnap = await getDocs(billsRef);
   for (const b of billsSnap.docs) {

@@ -26,6 +26,7 @@ import { updateProfileDisplay } from '../store/slices/authSlice';
 import { setCurrency } from '../store/slices/settingsSlice';
 import { useCurrencyCode } from '../theme/useCurrency';
 import { showToast } from '../utils/toast';
+import { logFirebaseError } from '../utils/firebaseDebug';
 
 const ProfileScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'Profile'>>();
@@ -73,7 +74,8 @@ const ProfileScreen: React.FC = () => {
         setCountry((data?.country as string) || '');
         setPhotoUrl(photoVal || undefined);
         if (data?.currency) dispatch(setCurrency(data.currency));
-      } catch {
+      } catch (e) {
+        logFirebaseError('ProfileScreen.load', e);
         setError('Unable to load profile.');
       } finally {
         setLoading(false);

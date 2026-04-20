@@ -7,7 +7,6 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Ionicons } from '@expo/vector-icons';
 import {
   EmailAuthProvider,
@@ -16,6 +15,8 @@ import {
 } from 'firebase/auth';
 import { auth } from '../services/firebaseConfig';
 import { showToast } from '../utils/toast';
+import AppScreen from '../components/AppScreen';
+import { newPasswordTextInputProps, passwordTextInputProps } from '../theme/formInputProps';
 import { useTheme } from '../theme/useTheme';
 import type { Colors } from '../theme/colors';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -104,14 +105,12 @@ const ChangePasswordScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   return (
-    <KeyboardAwareScrollView
-      style={styles.container}
+    <AppScreen
+      scrollable
+      keyboardAware
+      extraTop={8}
+      bottomInsetMode="screen"
       contentContainerStyle={styles.scrollContent}
-      keyboardShouldPersistTaps="handled"
-      showsVerticalScrollIndicator={false}
-      enableOnAndroid
-      extraScrollHeight={24}
-      enableAutomaticScroll
     >
         <View style={styles.headerRow}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton} hitSlop={12}>
@@ -136,8 +135,8 @@ const ChangePasswordScreen: React.FC<Props> = ({ navigation }) => {
                 placeholder="Enter current password"
                 placeholderTextColor={colors.mutedText}
                 secureTextEntry={!showCurrent}
-                autoCapitalize="none"
                 editable={!loading}
+                {...passwordTextInputProps}
               />
               <TouchableOpacity
                 onPress={() => setShowCurrent((s) => !s)}
@@ -161,8 +160,8 @@ const ChangePasswordScreen: React.FC<Props> = ({ navigation }) => {
                 placeholder="At least 6 characters"
                 placeholderTextColor={colors.mutedText}
                 secureTextEntry={!showNew}
-                autoCapitalize="none"
                 editable={!loading}
+                {...newPasswordTextInputProps}
               />
               <TouchableOpacity
                 onPress={() => setShowNew((s) => !s)}
@@ -186,8 +185,8 @@ const ChangePasswordScreen: React.FC<Props> = ({ navigation }) => {
                 placeholder="Confirm new password"
                 placeholderTextColor={colors.mutedText}
                 secureTextEntry={!showConfirm}
-                autoCapitalize="none"
                 editable={!loading}
+                {...newPasswordTextInputProps}
               />
               <TouchableOpacity
                 onPress={() => setShowConfirm((s) => !s)}
@@ -217,20 +216,15 @@ const ChangePasswordScreen: React.FC<Props> = ({ navigation }) => {
             </TouchableOpacity>
           </>
         )}
-    </KeyboardAwareScrollView>
+    </AppScreen>
   );
 };
 
 function makeStyles(colors: Colors, radius: { lg: number }) {
   return StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
     scrollContent: {
-      paddingHorizontal: 24,
-      paddingTop: 56,
-      paddingBottom: 40,
+      paddingTop: 8,
+      paddingBottom: 16,
     },
     headerRow: {
       flexDirection: 'row',

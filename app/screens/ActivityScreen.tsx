@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -23,6 +23,8 @@ import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { Colors } from '../theme/colors';
 import type { TeamSummary } from '../types/firestore';
 import { EXPENSE_CATEGORIES } from '../constants/categories';
+import { mobileTextInputDefaults } from '../theme/formInputProps';
+import { logFirebaseError } from '../utils/firebaseDebug';
 
 type ActivityNav = CompositeNavigationProp<
   NativeStackNavigationProp<MainTabParamList, 'Activity'>,
@@ -44,6 +46,8 @@ const ActivityScreen: React.FC = () => {
   const [filterTeamId, setFilterTeamId] = useState<string | 'all'>('all');
   const [filterPeriod, setFilterPeriod] = useState<PeriodFilter>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
 
   const load = useCallback(async () => {
     const uid = auth.currentUser?.uid;
@@ -60,7 +64,8 @@ const ActivityScreen: React.FC = () => {
       ]);
       setItems(data);
       setTeams(teamsData);
-    } catch {
+    } catch (e) {
+      logFirebaseError('ActivityScreen.load', e, { uid });
       setItems([]);
       setTeams([]);
     } finally {
@@ -71,7 +76,11 @@ const ActivityScreen: React.FC = () => {
 
   useFocusEffect(
     useCallback(() => {
-      setLoading(true);
+      if (itemsRef.current.length === 0) {
+        setLoading(true);
+      } else {
+        setLoading(false);
+      }
       load();
     }, [load])
   );
@@ -126,6 +135,8 @@ const ActivityScreen: React.FC = () => {
           placeholderTextColor={colors.mutedText}
           value={searchQuery}
           onChangeText={setSearchQuery}
+          returnKeyType="search"
+          {...mobileTextInputDefaults}
         />
         {searchQuery.length > 0 && (
           <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>

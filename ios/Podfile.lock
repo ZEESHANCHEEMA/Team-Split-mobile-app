@@ -2298,7 +2298,7 @@ SPEC CHECKSUMS:
   ExpoModulesJSI: 46dab6c6d9e181bf94757367a0d569bfc7fffd99
   ExpoPrint: 721e992dbfc6f2d5b9f52f75dd8e614801d035d6
   ExpoSharing: 5f1435af23bcf740c63b1d322400d1e26bf77393
-  ExpoSQLite: 77506d3d056c57118280d1e2a2d76cc06e4926b3
+  ExpoSQLite: ec0d32f34690a3d239b47f2884513d6381e1b83b
   FBLazyVector: 32e9ed0301d0fcbc1b2b341dd7fcbf291f51eb83
   hermes-engine: 0d7ce2abe0ad9b9b4fda84979a301020c6a72823
   RCTDeprecation: a522c536d2c7be8f518dd834883cf6dce1d4f545

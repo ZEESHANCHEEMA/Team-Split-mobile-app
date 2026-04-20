@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User } from 'firebase/auth';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { auth } from '../services/firebaseConfig';
+import { auth, firebaseAuthPersistenceReady } from '../services/firebaseConfig';
+import { logFirebaseInfo } from '../utils/firebaseDebug';
 import { store } from '../store';
 import { setUser, clearUser } from '../store/slices/authSlice';
 import { clearCache } from '../store/slices/cacheSlice';
@@ -19,25 +20,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, currentUser => {
-      setUserState(currentUser);
-      if (currentUser) {
-        store.dispatch(
-          setUser({
-            uid: currentUser.uid,
-            email: currentUser.email ?? null,
-            displayName: currentUser.displayName ?? null,
-            photoURL: currentUser.photoURL ?? null,
-          })
-        );
-      } else {
-        store.dispatch(clearUser());
-        store.dispatch(clearCache());
-      }
-      setLoading(false);
-    });
+    let unsubscribe: (() => void) | undefined;
+    let cancelled = false;
 
-    return unsubscribe;
+    const startAuthListener = () => {
+      if (cancelled) return;
+      unsubscribe = onAuthStateChanged(auth, currentUser => {
+          if (currentUser) {
+            logFirebaseInfo('auth', `onAuthStateChanged: signed in uid=${currentUser.uid}`);
+          } else {
+            logFirebaseInfo('auth', 'onAuthStateChanged: signed out');
+          }
+          setUserState(currentUser);
+          if (currentUser) {
+            store.dispatch(
+              setUser({
+                uid: currentUser.uid,
+                email: currentUser.email ?? null,
+                displayName: currentUser.displayName ?? null,
+                photoURL: currentUser.photoURL ?? null,
+              })
+            );
+          } else {
+            store.dispatch(clearUser());
+            store.dispatch(clearCache());
+          }
+          setLoading(false);
+        });
+    };
+
+    firebaseAuthPersistenceReady
+      .catch(err => {
+        console.warn('[Auth] Firebase persistence setup failed', err);
+      })
+      .then(async () => {
+        const a = auth as { authStateReady?: () => Promise<void> };
+        if (typeof a.authStateReady === 'function') {
+          await a.authStateReady();
+        }
+      })
+      .then(() => {
+        startAuthListener();
+      });
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
   }, []);
 
   const logout = async () => {

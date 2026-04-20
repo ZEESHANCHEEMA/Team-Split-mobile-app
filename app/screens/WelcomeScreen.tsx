@@ -1,9 +1,11 @@
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
 import type { RootStackParamList } from '../navigation/AppNavigator';
+import AppScreen from '../components/AppScreen';
 import { useTheme } from '../theme/useTheme';
+import { WELCOME_HORIZONTAL_PADDING } from '../theme/screenLayout';
 import type { Colors } from '../theme/colors';
 
 type WelcomeNav = NativeStackNavigationProp<RootStackParamList, 'Welcome'>;
@@ -18,11 +20,14 @@ const WelcomeScreen: React.FC = () => {
   const styles = useMemo(() => makeStyles(colors, radius), [colors, radius]);
 
   return (
-    <ScrollView
-      style={styles.container}
+    <AppScreen
+      scrollable
+      horizontalPadding={WELCOME_HORIZONTAL_PADDING}
+      extraTop={16}
+      bottomInsetMode="screen"
+      withGlow
       contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled"
+      scrollProps={{ showsVerticalScrollIndicator: false }}
     >
       {/* Logo: orange stylized S with TM */}
       <View style={styles.logoWrap}>
@@ -62,23 +67,17 @@ const WelcomeScreen: React.FC = () => {
           Terms & Privacy Policy
         </Text>
       </Text>
-    </ScrollView>
+    </AppScreen>
   );
 };
 
 function makeStyles(colors: Colors, radius: { lg: number }) {
   return StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-    paddingTop: 156,
-  },
   content: {
     flexGrow: 1,
-    paddingHorizontal: 28,
-    paddingTop: 56,
-    paddingBottom: 32,
+    justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: 24,
   },
   logoWrap: {
     position: 'relative',

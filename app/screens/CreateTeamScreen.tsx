@@ -23,6 +23,7 @@ import type { CompositeNavigationProp } from '@react-navigation/native';
 import { useNavigation } from '@react-navigation/native';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { setDashboardData } from '../store/slices/cacheSlice';
+import { logFirebaseError } from '../utils/firebaseDebug';
 
 type CreateTeamNav = CompositeNavigationProp<
   NativeStackNavigationProp<MainTabParamList, 'CreateTeam'>,
@@ -50,7 +51,8 @@ const CreateTeamScreen: React.FC = () => {
       const data = await getDashboardTeams(uid);
       // Reuse the same cache slice used by Dashboard
       dispatch(setDashboardData({ teams: data, memberBalances: [] }));
-    } catch {
+    } catch (e) {
+      logFirebaseError('CreateTeamScreen.loadTeams', e, { uid });
       dispatch(setDashboardData({ teams: [], memberBalances: [] }));
     } finally {
       setListLoading(false);

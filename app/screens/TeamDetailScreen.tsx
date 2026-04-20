@@ -37,6 +37,7 @@ import { useCurrency } from '../theme/useCurrency';
 import { useTheme } from '../theme/useTheme';
 import type { Team, Expense, MemberBalanceSummary, RecurringExpense } from '../types/firestore';
 import { showToast } from '../utils/toast';
+import { logFirebaseError } from '../utils/firebaseDebug';
 import type { Colors } from '../theme/colors';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TeamDetail'>;
@@ -80,7 +81,8 @@ const TeamDetailScreen: React.FC<Props> = ({ navigation, route }) => {
       setMemberBalances(members);
       setBalance(t ? computeBalanceForUserInTeam(ex, uid) : 0);
       setRecurring(recList);
-    } catch {
+    } catch (e) {
+      logFirebaseError('TeamDetailScreen.load', e, { teamId, uid });
       setTeam(null);
       setExpenses([]);
       setMemberBalances([]);

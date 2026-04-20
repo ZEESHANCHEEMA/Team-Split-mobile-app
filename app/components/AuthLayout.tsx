@@ -1,22 +1,21 @@
 import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Keyboard,
-  TouchableWithoutFeedback,
-  TouchableOpacity,
-} from 'react-native';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../navigation/AppNavigator';
+import AppScreen from './AppScreen';
 import { useTheme } from '../theme/useTheme';
+import { SCREEN_HORIZONTAL_PADDING } from '../theme/screenLayout';
+
+/** Auth flows only navigate back to stack routes that need no params. */
+type AuthBackRoute = Extract<keyof RootStackParamList, 'Welcome' | 'Login' | 'Register'>;
 
 interface Props {
   children: React.ReactNode;
   subtitle: string;
   showBack?: boolean;
-  backScreen?: string;
+  backScreen?: AuthBackRoute;
 }
 
 const AuthLayout: React.FC<Props> = ({
@@ -25,51 +24,46 @@ const AuthLayout: React.FC<Props> = ({
   showBack = false,
   backScreen = 'Welcome',
 }) => {
-  const navigation = useNavigation<any>();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { colors } = useTheme();
 
   return (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <KeyboardAwareScrollView
-        style={{ flex: 1, backgroundColor: colors.background }}
-        contentContainerStyle={styles.container}
-        enableOnAndroid
-        extraScrollHeight={20}
-        keyboardShouldPersistTaps="handled"
-      >
-        {showBack && (
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => navigation.replace(backScreen)}
-          >
-            <Ionicons name="chevron-back" size={24} color={colors.text} />
-          </TouchableOpacity>
-        )}
+    <AppScreen
+      scrollable
+      keyboardAware
+      horizontalPadding={SCREEN_HORIZONTAL_PADDING}
+      extraTop={0}
+      bottomInsetMode="screen"
+      contentContainerStyle={styles.scrollContent}
+    >
+      {showBack ? (
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          style={styles.backButton}
+          onPress={() => navigation.replace(backScreen)}
+          hitSlop={{ top: 1, bottom: 12, left: 12, right: 12 }}
+        >
+          <Ionicons name="chevron-back" size={24} color={colors.text} />
+        </TouchableOpacity>
+      ) : null}
 
-        <View style={styles.logoWrap}>
-          <Text style={[styles.logo, { color: colors.primary }]}>TS</Text>
-          <Text style={[styles.title, { color: colors.text }]}>
-            Team Split
-          </Text>
-          <Text style={[styles.subtitle, { color: colors.mutedText }]}>
-            {subtitle}
-          </Text>
-        </View>
+      <View style={styles.logoWrap}>
+        <Text style={[styles.logo, { color: colors.primary }]}>TS</Text>
+        <Text style={[styles.title, { color: colors.text }]}>Team Split</Text>
+        <Text style={[styles.subtitle, { color: colors.mutedText }]}>{subtitle}</Text>
+      </View>
 
-        {children}
-      </KeyboardAwareScrollView>
-    </TouchableWithoutFeedback>
+      {children}
+    </AppScreen>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    paddingHorizontal: 20,
-    paddingTop: 100,
-    paddingBottom: 40,
+  scrollContent: {
+    paddingTop: 4,
+    paddingBottom: 8,
   },
-
   backButton: {
     width: 40,
     height: 40,
@@ -77,26 +71,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.06)',
-    marginBottom: 20,
+    marginBottom: 16,
+    alignSelf: 'flex-start',
   },
-
   logoWrap: {
     alignItems: 'center',
-    marginBottom: 30,
+    marginBottom: 24,
   },
-
   logo: {
     fontSize: 56,
     fontWeight: '700',
     marginBottom: 6,
   },
-
   title: {
     fontSize: 30,
     fontWeight: '700',
     marginBottom: 6,
   },
-
   subtitle: {
     fontSize: 14,
     textAlign: 'center',

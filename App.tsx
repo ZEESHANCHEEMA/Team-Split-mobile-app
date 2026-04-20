@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, View } from 'react-native';
 import { Provider, useSelector } from 'react-redux';
 import { PersistGate } from 'redux-persist/integration/react';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppNavigator from './app/navigation/AppNavigator';
 import { AuthProvider, useAuthContext } from './app/context/AuthContext';
 import { store, persistor } from './app/store';
@@ -43,21 +44,22 @@ const App: React.FC = () => {
   const fallbackColors = getColors('light');
   return (
     <Provider store={store}>
-      <PersistGate
-        loading={
-          <View style={{ flex: 1, backgroundColor: fallbackColors.background, justifyContent: 'center', alignItems: 'center' }}>
-            <ActivityIndicator color={fallbackColors.primary} size="large" />
-          </View>
-        }
-        persistor={persistor}
-      >
-        <AuthProvider>
-          <Root />
-        </AuthProvider>
-      </PersistGate>
+      <SafeAreaProvider>
+        <PersistGate
+          loading={
+            <View style={{ flex: 1, backgroundColor: fallbackColors.background, justifyContent: 'center', alignItems: 'center' }}>
+              <ActivityIndicator color={fallbackColors.primary} size="large" />
+            </View>
+          }
+          persistor={persistor}
+        >
+          <AuthProvider>
+            <Root />
+          </AuthProvider>
+        </PersistGate>
+      </SafeAreaProvider>
     </Provider>
   );
 };
 
 export default App;
-

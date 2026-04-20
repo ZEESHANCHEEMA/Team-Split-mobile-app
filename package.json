@@ -8,7 +8,9 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "build:android:apk": "eas build --platform android --profile preview",
-    "copy-splash:ios": "node scripts/copy-splash-ios.js"
+    "copy-splash:ios": "node scripts/copy-splash-ios.js",
+    "deploy:firestore": "firebase deploy --only firestore:rules",
+    "firebase:login": "firebase login"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
@@ -39,6 +41,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "firebase-tools": "^14.0.0",
     "typescript": "~5.9.2"
   },
   "private": true

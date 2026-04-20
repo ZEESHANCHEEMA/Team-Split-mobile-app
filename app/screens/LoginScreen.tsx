@@ -7,7 +7,6 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -16,6 +15,8 @@ import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../services/firebaseConfig';
 import { ensureUserProfile } from '../services/firestore';
 import { showToast } from '../utils/toast';
+import AppScreen from '../components/AppScreen';
+import { emailTextInputProps, passwordTextInputProps } from '../theme/formInputProps';
 import { useTheme } from '../theme/useTheme';
 import type { Colors } from '../theme/colors';
 
@@ -61,20 +62,18 @@ const LoginScreen: React.FC = () => {
   };
 
   return (
-    <KeyboardAwareScrollView
-      style={[styles.scroll, styles.container]}
+    <AppScreen
+      scrollable
+      keyboardAware
+      extraTop={4}
+      bottomInsetMode="screen"
       contentContainerStyle={styles.scrollContent}
-      keyboardShouldPersistTaps="handled"
-      showsVerticalScrollIndicator={false}
-      enableOnAndroid
-      extraScrollHeight={24}
-      enableAutomaticScroll
     >
         <View style={styles.headerRow}>
           <TouchableOpacity
             onPress={() => navigation.replace('Welcome')}
             style={styles.backButton}
-            hitSlop={{ top: 32, bottom: 12, left: 12, right: 12 }}
+            hitSlop={{ top: 8, bottom: 12, left: 12, right: 12 }}
             accessibilityRole="button"
             accessibilityLabel="Back"
           >
@@ -82,6 +81,7 @@ const LoginScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
 
+        <View style={styles.formBlock}>
         <View style={styles.logoWrap}>
           <Text style={styles.logoS}>TS</Text>
           <Text style={styles.brandName}>Team Split</Text>
@@ -96,8 +96,7 @@ const LoginScreen: React.FC = () => {
             placeholderTextColor={colors.mutedText}
             value={email}
             onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
+            {...emailTextInputProps}
           />
         </View>
 
@@ -110,6 +109,7 @@ const LoginScreen: React.FC = () => {
             value={password}
             onChangeText={setPassword}
             secureTextEntry={!showPassword}
+            {...passwordTextInputProps}
           />
           <TouchableOpacity
             onPress={() => setShowPassword((p) => !p)}
@@ -140,32 +140,26 @@ const LoginScreen: React.FC = () => {
             <Text style={styles.footerLink}>Register</Text>
           </TouchableOpacity>
         </View>
-    </KeyboardAwareScrollView>
+        </View>
+    </AppScreen>
   );
 };
 
 function makeStyles(colors: Colors, radius: { lg: number }) {
   return StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  scroll: {
-    flex: 1,
-  },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 20,
-    paddingTop: 76,
-    paddingBottom: 40,
+    paddingBottom: 8,
+    justifyContent: 'flex-start',
+  },
+  formBlock: {
+    flexGrow: 1,
     justifyContent: 'center',
   },
   headerRow: {
-    position: 'absolute',
-    top: 70,
-    left: 20,
-    right: 20,
-    zIndex: 2,
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    marginBottom: 4,
   },
   backButton: {
     width: 40,

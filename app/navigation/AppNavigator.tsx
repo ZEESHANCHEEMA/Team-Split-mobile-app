@@ -1,12 +1,19 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import { NavigationContainer, DefaultTheme, Theme } from '@react-navigation/native';
 import { rootNavigationRef } from './navigationRef';
+import { useAuthContext } from '../context/AuthContext';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/useTheme';
+import {
+  TAB_BAR_HEIGHT,
+  TAB_BAR_HORIZONTAL_INSET,
+  TAB_BAR_BOTTOM_MARGIN,
+  TAB_BAR_RADIUS,
+} from '../theme/screenLayout';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import DashboardScreen from '../screens/DashboardScreen';
@@ -60,16 +67,50 @@ export type MainTabParamList = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const MainTab = createBottomTabNavigator<MainTabParamList>();
 
-const TAB_BAR_HEIGHT = 54;
-const BOTTOM_MARGIN = 0;
-const HORIZONTAL_MARGIN = 20;
-const TAB_BAR_RADIUS = 28;
+const AUTH_FLOW_SCREENS: (keyof RootStackParamList)[] = ['Welcome', 'Login', 'Register'];
+
+const PROTECTED_SCREENS: (keyof RootStackParamList)[] = [
+  'MainTabs',
+  'NewTeam',
+  'TeamDetail',
+  'AddExpense',
+  'ExpenseDetail',
+  'FriendDetail',
+  'Profile',
+  'ChangePassword',
+];
+
+/**
+ * After Firebase restores a session, leave Welcome/Login/Register for MainTabs.
+ * If the user signs out while on a protected screen, return to Welcome.
+ */
+const AuthSessionNavigationSync: React.FC<{ navReady: boolean }> = ({ navReady }) => {
+  const { user, loading } = useAuthContext();
+
+  useEffect(() => {
+    if (loading || !navReady || !rootNavigationRef.isReady()) return;
+
+    const name = rootNavigationRef.getCurrentRoute()?.name as keyof RootStackParamList | undefined;
+    if (!name) return;
+
+    if (user && AUTH_FLOW_SCREENS.includes(name)) {
+      rootNavigationRef.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
+      return;
+    }
+
+    if (!user && PROTECTED_SCREENS.includes(name)) {
+      rootNavigationRef.reset({ index: 0, routes: [{ name: 'Welcome' }] });
+    }
+  }, [user, loading, navReady]);
+
+  return null;
+};
 
 const MainTabsNavigator: React.FC = () => {
   const { colors, theme } = useTheme();
   const insets = useSafeAreaInsets();
   const bottomInset = Platform.OS === 'ios' ? insets.bottom : 16;
-  const tabBarBottom = bottomInset + BOTTOM_MARGIN;
+  const tabBarBottom = bottomInset + TAB_BAR_BOTTOM_MARGIN;
   const tabBarBg =
     theme === 'dark'
       ? 'rgba(37,40,48,0.92)'
@@ -81,10 +122,11 @@ const MainTabsNavigator: React.FC = () => {
     <MainTab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
+        tabBarHideOnKeyboard: true,
         tabBarStyle: {
           position: 'absolute',
-          left: HORIZONTAL_MARGIN,
-          right: HORIZONTAL_MARGIN,
+          left: TAB_BAR_HORIZONTAL_INSET,
+          right: TAB_BAR_HORIZONTAL_INSET,
           bottom: tabBarBottom,
           height: TAB_BAR_HEIGHT,
           borderRadius: TAB_BAR_RADIUS,
@@ -93,13 +135,17 @@ const MainTabsNavigator: React.FC = () => {
           elevation: 12,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.12,
-          shadowRadius: 16,
-          overflow: 'hidden',
+          shadowOpacity: 0.14,
+          shadowRadius: 18,
         },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.mutedText,
-        tabBarLabelStyle: { fontSize: 10, fontWeight: '500' },
+        tabBarLabelStyle: {
+          fontSize: 10,
+          fontWeight: '500',
+          marginBottom: 4,
+        },
+        tabBarItemStyle: { paddingTop: 4 },
         tabBarIcon: ({ color, size }) => {
           let iconName: keyof typeof Ionicons.glyphMap = 'home-outline';
           if (route.name === 'CreateTeam') iconName = 'people-outline';
@@ -127,6 +173,7 @@ const MainTabsNavigator: React.FC = () => {
 };
 
 const AppNavigator: React.FC = () => {
+  const [navReady, setNavReady] = useState(false);
   const { colors } = useTheme();
   const navigationTheme: Theme = {
     ...DefaultTheme,
@@ -140,8 +187,18 @@ const AppNavigator: React.FC = () => {
     },
   };
   return (
-    <NavigationContainer ref={rootNavigationRef} theme={navigationTheme}>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <NavigationContainer
+      ref={rootNavigationRef}
+      theme={navigationTheme}
+      onReady={() => setNavReady(true)}
+    >
+      <AuthSessionNavigationSync navReady={navReady} />
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { flex: 1 },
+        }}
+      >
         <Stack.Screen name="Welcome" component={WelcomeScreen} />
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Register" component={RegisterScreen} />

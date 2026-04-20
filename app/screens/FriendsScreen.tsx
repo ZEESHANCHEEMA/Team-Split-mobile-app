@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -29,6 +29,8 @@ import type { Friend } from '../types/firestore';
 import { useCurrency } from '../theme/useCurrency';
 import { AnimatedFadeInUp } from '../components/animations';
 import { showToast } from '../utils/toast';
+import { mobileTextInputDefaults, nameTextInputProps } from '../theme/formInputProps';
+import { logFirebaseError } from '../utils/firebaseDebug';
 
 type FriendsNav = CompositeNavigationProp<
   BottomTabNavigationProp<MainTabParamList, 'Friends'>,
@@ -46,6 +48,9 @@ const FriendsScreen: React.FC = () => {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const friendsRef = useRef(friends);
+  friendsRef.current = friends;
+
   const load = useCallback(async () => {
     const uid = auth.currentUser?.uid;
     if (!uid) {
@@ -56,7 +61,8 @@ const FriendsScreen: React.FC = () => {
     try {
       const list = await getFriends(uid);
       setFriends(list);
-    } catch {
+    } catch (e) {
+      logFirebaseError('FriendsScreen.load', e, { uid });
       setFriends([]);
     } finally {
       setLoading(false);
@@ -65,7 +71,11 @@ const FriendsScreen: React.FC = () => {
 
   useFocusEffect(
     useCallback(() => {
-      setLoading(true);
+      if (friendsRef.current.length === 0) {
+        setLoading(true);
+      } else {
+        setLoading(false);
+      }
       load();
     }, [load])
   );
@@ -218,6 +228,7 @@ const FriendsScreen: React.FC = () => {
               placeholderTextColor={colors.mutedText}
               value={name}
               onChangeText={setName}
+              {...nameTextInputProps}
             />
             <TextInput
               style={[styles.input, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
@@ -226,6 +237,9 @@ const FriendsScreen: React.FC = () => {
               value={phone}
               onChangeText={setPhone}
               keyboardType="phone-pad"
+              textContentType="telephoneNumber"
+              autoComplete="tel"
+              {...mobileTextInputDefaults}
             />
             <TouchableOpacity style={[styles.modalButton, { backgroundColor: colors.primary }]} onPress={handleAddFriend} disabled={!name.trim()}>
               <Text style={styles.modalButtonText}>Add Friend</Text>
